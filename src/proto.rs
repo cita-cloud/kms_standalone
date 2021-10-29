@@ -13,17 +13,14 @@ mod kms {
 pub use common::{
     Empty, Hash,
 };
-pub use blockchain::{
-    RawTransactions,
-};
-pub use kms::kms_service_server::{ KmsService, KmsServiceServer };
-pub use kms::HashDataRequest;
-pub use kms::GenerateKeyPairRequest;
-pub use kms::GenerateKeyPairResponse;
+pub use blockchain::RawTransactions;
 pub use kms::{
+    kms_service_server::{ KmsService, KmsServiceServer },
     GetCryptoInfoResponse,
+    HashDataRequest,
     VerifyDataHashRequest,
     SignMessageRequest, SignMessageResponse,
+    GenerateKeyPairRequest, GenerateKeyPairResponse,
     RecoverSignatureRequest, RecoverSignatureResponse,
 };
 pub use common::HashResponse;

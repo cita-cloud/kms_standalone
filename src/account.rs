@@ -1,15 +1,14 @@
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 
 use tokio::sync::Mutex;
 use tokio::task::block_in_place;
 
 use secrecy::ExposeSecret;
 use secrecy::Secret;
+use secrecy::SecretString;
 use secrecy::SecretVec;
 
-use sqlx::Database;
 use sqlx::MySqlPool;
 use lru::LruCache;
 
@@ -83,7 +82,7 @@ impl Account {
 pub struct AccountManager {
     nonce: AtomicU64,
 
-    master_password: SecretVec<u8>,
+    master_password: SecretString,
 
     pool: MySqlPool,
     cache: Mutex<LruCache<u64, Account>>,
@@ -91,9 +90,9 @@ pub struct AccountManager {
 
 impl AccountManager
 {
-    pub async fn new(db_uri: &str, master_password: SecretVec<u8>) -> Self {
+    pub async fn new(db_url: &str, master_password: SecretString) -> Self {
         let pool = sqlx::mysql::MySqlPoolOptions::new()
-            .connect(db_uri)
+            .connect(db_url)
             .await
             .unwrap();
         sqlx::migrate!().run(&pool).await.unwrap();
@@ -107,14 +106,14 @@ impl AccountManager
         .unwrap();
 
         if let Some(HashAndSalt{ password_hash, salt }) = hash_and_salt {
-            let salted_pw = Secret::new([master_password.expose_secret(), salt.as_slice()].concat());
+            let salted_pw = Secret::new([master_password.expose_secret().as_bytes(), salt.as_slice()].concat());
             if password_hash != sm3_hash(salted_pw.expose_secret()) {
                 panic!("wrong password");
             }
         } else {
             let salt: Salt = rand::thread_rng().gen();
             let salted_pw_hash = {
-                let salted_pw = Secret::new([master_password.expose_secret(), salt.as_slice()].concat());
+                let salted_pw = Secret::new([master_password.expose_secret().as_bytes(), salt.as_slice()].concat());
                 sm3_hash(salted_pw.expose_secret())
             };
             sqlx::query!(
@@ -144,7 +143,7 @@ impl AccountManager
         let salt: Salt = rand::thread_rng().gen();
         let encrypted_privkey = {
             let password_hash = {
-                let salted_pw = Secret::new([self.master_password.expose_secret(), salt.as_slice()].concat());
+                let salted_pw = Secret::new([self.master_password.expose_secret().as_bytes(), salt.as_slice()].concat());
                 sm3_hash(salted_pw.expose_secret())
             };
             sm4_encrypt(account.expose_privkey(), &password_hash)
@@ -184,7 +183,7 @@ impl AccountManager
             .unwrap();
 
             if let Some(encrypted) = encrypted {
-                let account = Account::from_encrypted(&encrypted, &self.master_password.expose_secret());
+                let account = Account::from_encrypted(&encrypted, self.master_password.expose_secret().as_bytes());
                 let sig = account.sign(data);
                 self.cache.lock().await.put(account_id, account);
                 Some(sig)

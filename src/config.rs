@@ -4,10 +4,17 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct KmsConfig {
+    pub db_url_path: String,
+    pub db_user_path: String,
+    pub db_password_path: String,
+    pub master_password_path: String,
+
     pub grpc_listen_port: u16,
+    pub idle_timeout_millis: u64,
+    pub max_connections: u64,
+    pub max_cached_account: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

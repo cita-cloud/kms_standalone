@@ -1,1 +1,4 @@
 /target
+# Do not commit your DATABASE_URL
+.cargo/config.toml
+.env

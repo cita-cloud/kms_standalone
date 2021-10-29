@@ -1,14 +1,14 @@
 use tokio::task::block_in_place;
 
-use secrecy::SecretVec;
+use secrecy::SecretString;
 
-use crate::proto::StatusCode;
-use crate::proto::HashDataRequest;
-use crate::proto::HashResponse;
-use crate::proto::KmsService;
-use crate::proto::KmsServiceServer;
 use crate::proto::{
-    Empty, Hash,
+    StatusCode,
+    Hash,
+    HashDataRequest,
+    HashResponse,
+    KmsService,
+    Empty,
     RawTransactions,
     GetCryptoInfoResponse,
     GenerateKeyPairRequest, GenerateKeyPairResponse,
@@ -21,20 +21,20 @@ use crate::account::AccountManager;
 use crate::sm::{
     Signature,
     sm2_recover_signature,
-    sm3_hash,
     pk2address,
+    sm3_hash,
     ADDR_BYTES_LEN,
     SM2_SIGNATURE_BYTES_LEN,
     SM3_HASH_BYTES_LEN,
 };
 
-const KMS_SERVICE_NAME: &str = "kms_sm";
+const KMS_SERVICE_NAME: &str = "kms_standalone";
 
 pub struct CitaCloudKmsService(AccountManager);
 
 impl CitaCloudKmsService {
-    pub async fn new(db_uri: &str, master_password: SecretVec<u8>) -> Self {
-        Self(AccountManager::new(db_uri, master_password).await)
+    pub async fn new(db_url: &str, master_password: SecretString) -> Self {
+        Self(AccountManager::new(db_url, master_password).await)
     }
 }
 
