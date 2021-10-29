@@ -1,0 +1,21 @@
+[package]
+name = "kms"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sqlx = { version = "0.5.9", features = [ "runtime-tokio-rustls", "mysql" ] }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"] }
+tonic = "0.6"
+prost = "0.9"
+lru = "0.7"
+secrecy = "0.8"
+rand = "0.8"
+libsm = "0.4.1"
+efficient-sm2 = "0.1.5"
+serde = { version = "1", features = ["derive"] }
+toml = "0.5"
+clap = "=3.0.0-beta.4"
+
+[build-dependencies]
+tonic-build = "0.6"
