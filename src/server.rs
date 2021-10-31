@@ -1,7 +1,5 @@
 use tokio::task::block_in_place;
 
-use secrecy::SecretString;
-
 use anyhow::Result;
 
 use crate::proto::{
@@ -23,8 +21,8 @@ const KMS_SERVICE_NAME: &str = "kms_standalone";
 pub struct CitaCloudKmsService(AccountManager);
 
 impl CitaCloudKmsService {
-    pub async fn new(db_url: &str, master_password: SecretString) -> Result<Self> {
-        Ok(Self(AccountManager::new(db_url, master_password).await?))
+    pub fn new(acc_mgr: AccountManager) -> Self {
+        Self(acc_mgr)
     }
 }
 
@@ -132,8 +130,7 @@ impl KmsService for CitaCloudKmsService {
         } else {
             // just some random error code indicating data hash mismatched
             // that doesn't happen to be in the status code repo.
-            /*2*/
-            333
+            /*2*/333
         };
 
         Ok(tonic::Response::new(StatusCode { code }))

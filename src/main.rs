@@ -17,6 +17,7 @@ use secrecy::SecretString;
 use anyhow::anyhow;
 use anyhow::Result;
 
+use account::AccountManager;
 use config::load_config;
 use proto::KmsServiceServer;
 use server::CitaCloudKmsService;
@@ -63,7 +64,17 @@ async fn main() -> Result<()> {
                 };
                 let master_password =
                     SecretString::new(fs::read_to_string(&config.db_password_path)?);
-                CitaCloudKmsService::new(&db_url, master_password).await?
+
+                let acc_mgr = AccountManager::new(
+                    &db_url,
+                    master_password,
+                    config.max_cached_accounts,
+                    config.db_max_connections,
+                    config.db_conn_idle_timeout_millis,
+                )
+                .await?;
+
+                CitaCloudKmsService::new(acc_mgr)
             };
             let grpc_addr = format!("0.0.0.0:{}", config.grpc_listen_port)
                 .parse()
