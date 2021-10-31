@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
@@ -36,7 +37,6 @@ pub enum Error {
 
 #[derive(Debug)]
 struct EncryptedAccount {
-    id: u64,
     pubkey: Vec<u8>,
     encrypted_privkey: Vec<u8>,
     salt: Vec<u8>,
@@ -96,7 +96,7 @@ pub struct AccountManager {
     master_password: SecretString,
 
     pool: MySqlPool,
-    cache: Mutex<LruCache<u64, Account>>,
+    cache: Mutex<LruCache<u64, Arc<Account>>>,
 }
 
 impl AccountManager {
@@ -199,22 +199,20 @@ impl AccountManager {
         .await
         .context("cannot store new account into database")?;
 
-        self.cache.lock().await.put(account_id, account);
+        self.cache.lock().await.put(account_id, Arc::new(account));
 
         Ok((account_id, address))
     }
 
     pub async fn sign_with(&self, account_id: u64, data: &[u8]) -> Result<Signature> {
-        let mut guard = self.cache.lock().await;
-        if let Some(account) = guard.get(&account_id) {
+        let account = self.cache.lock().await.get(&account_id).cloned();
+        if let Some(account) = account {
             // TODO: block_in_place
             Ok(account.sign(data))
         } else {
-            drop(guard);
-
             let encrypted = sqlx::query_as!(
                 EncryptedAccount,
-                "SELECT id, pubkey, encrypted_privkey, salt FROM Accounts WHERE id=?",
+                "SELECT pubkey, encrypted_privkey, salt FROM Accounts WHERE id=?",
                 account_id
             )
             .fetch_optional(&self.pool)
@@ -227,7 +225,7 @@ impl AccountManager {
                     self.master_password.expose_secret().as_bytes(),
                 );
                 let sig = account.sign(data);
-                self.cache.lock().await.put(account_id, account);
+                self.cache.lock().await.put(account_id, Arc::new(account));
                 Ok(sig)
             } else {
                 bail!(Error::AccountNotFound(account_id));
