@@ -11,9 +11,11 @@ mod kms {
 }
 
 pub use blockchain::RawTransactions;
-pub use common::HashResponse;
-pub use common::StatusCode;
-pub use common::{Empty, Hash};
+pub use common::{
+    Empty, Hash,
+    StatusCode,
+    HashResponse,
+};
 pub use kms::{
     kms_service_server::{KmsService, KmsServiceServer},
     GenerateKeyPairRequest, GenerateKeyPairResponse, GetCryptoInfoResponse, HashDataRequest,

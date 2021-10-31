@@ -10,13 +10,15 @@ use std::path::PathBuf;
 use clap::App;
 use clap::Arg;
 
-use url::Url;
-
-use secrecy::SecretString;
-
 use anyhow::anyhow;
 use anyhow::Context;
 use anyhow::Result;
+
+use tracing::info;
+use tracing::Level;
+
+use url::Url;
+use secrecy::SecretString;
 
 use account::AccountManager;
 use config::load_config;
@@ -31,6 +33,28 @@ async fn main() -> Result<()> {
             .takes_value(true)
             .validator(|s| s.parse::<PathBuf>())
             .default_value("config.toml"),
+    )
+    .arg(
+        Arg::new("stdout")
+            .about("if specified, log to stdout")
+            .long("stdout")
+            .conflicts_with_all(&["log-dir", "log-file-name"]),
+    )
+    .arg(
+        Arg::new("log-dir")
+            .about("the log dir")
+            .short('d')
+            .long("log-dir")
+            .takes_value(true)
+            .validator(|s| s.parse::<PathBuf>()),
+    )
+    .arg(
+        Arg::new("log-file-name")
+            .about("the log file name")
+            .short('f')
+            .long("log-file-name")
+            .takes_value(true)
+            .validator(|s| s.parse::<PathBuf>()),
     );
 
     let app = App::new("kms")
@@ -44,6 +68,24 @@ async fn main() -> Result<()> {
                 let path = m.value_of("config").unwrap();
                 load_config(path).context("cannot load config")?
             };
+
+            let log_dir = m.value_of("log-dir");
+            let log_file_name = m.value_of("log-file-name");
+            let (writer, _guard) = if m.is_present("stdout") {
+                tracing_appender::non_blocking(std::io::stdout())
+            } else {
+                let log_dir = log_dir.unwrap_or("logs");
+                let log_file_name = log_file_name.unwrap_or("kms-service.log");
+                let file_appender = tracing_appender::rolling::daily(log_dir, log_file_name);
+                tracing_appender::non_blocking(file_appender)
+            };
+
+            tracing_subscriber::fmt()
+                .with_max_level(Level::INFO)
+                .with_ansi(false)
+                .with_writer(writer)
+                .init();
+
             let kms_svc = {
                 // TODO: Is it necessary to wrap db_password and db_url in secret?
                 // I believe them will have footprint during encoding and eventually be stored somewhere non-secret,
@@ -82,9 +124,12 @@ async fn main() -> Result<()> {
 
                 CitaCloudKmsService::new(acc_mgr)
             };
+
             let grpc_addr = format!("0.0.0.0:{}", config.grpc_listen_port)
                 .parse()
                 .unwrap();
+
+            info!("start kms service, listen grpc on `0.0.0.0:{}`", config.grpc_listen_port);
             tonic::transport::Server::builder()
                 .add_service(KmsServiceServer::new(kms_svc))
                 .serve(grpc_addr)

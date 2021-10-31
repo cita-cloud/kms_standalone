@@ -12,8 +12,8 @@ use crate::proto::{
 use crate::account::AccountManager;
 use crate::account::Error as AccountError;
 use crate::sm::{
-    pk2address, sm2_recover_signature, sm3_hash, Signature, ADDR_BYTES_LEN,
-    SM2_SIGNATURE_BYTES_LEN, SM3_HASH_BYTES_LEN,
+    pk2address, sm2_recover_signature, sm3_hash, Signature,
+    ADDR_BYTES_LEN, SM2_SIGNATURE_BYTES_LEN, SM3_HASH_BYTES_LEN,
 };
 
 const KMS_SERVICE_NAME: &str = "kms_standalone";
