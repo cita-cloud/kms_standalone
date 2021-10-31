@@ -97,16 +97,22 @@ impl AccountManager {
         master_password: SecretString,
         max_cached_accounts: usize,
         db_max_connections: u32,
+        db_conn_timeout_millis: u64,
         db_conn_idle_timeout_millis: u64,
     ) -> Result<Self> {
         let pool = sqlx::mysql::MySqlPoolOptions::new()
             .max_connections(db_max_connections)
+            .connect_timeout(Duration::from_millis(db_conn_timeout_millis))
             .idle_timeout(Duration::from_millis(db_conn_idle_timeout_millis))
             .connect(db_url)
-            .await?;
-        sqlx::migrate!().run(&pool).await?;
+            .await
+            .context("cannot connect to database")?;
+        sqlx::migrate!()
+            .run(&pool)
+            .await
+            .context("cannot run migration")?;
 
-        let nonce: u64 = sqlx::query!("SELECT COUNT(*) as nonce FROM Accounts",)
+        let nonce: u64 = sqlx::query!("SELECT COUNT(*) as nonce FROM Accounts")
             .fetch_one(&pool)
             .await
             .context("cannot fetch the number of accounts from database")?

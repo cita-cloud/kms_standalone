@@ -15,6 +15,7 @@ use url::Url;
 use secrecy::SecretString;
 
 use anyhow::anyhow;
+use anyhow::Context;
 use anyhow::Result;
 
 use account::AccountManager;
@@ -41,17 +42,20 @@ async fn main() -> Result<()> {
         Some(("run", m)) => {
             let config = {
                 let path = m.value_of("config").unwrap();
-                load_config(path)
+                load_config(path).context("cannot load config")?
             };
             let kms_svc = {
                 // TODO: Is it necessary to wrap db_password and db_url in secret?
                 // I believe them will have footprint during encoding and eventually be stored somewhere non-secret,
                 // and it's less important than master_password.
                 let db_url = {
-                    let db_user = fs::read_to_string(&config.db_user_path)?;
-                    let db_password = fs::read_to_string(&config.db_password_path)?;
-
-                    let mut db_url: Url = fs::read_to_string(&config.db_url_path)?.parse()?;
+                    let db_user =
+                        fs::read_to_string(&config.db_user_path).context("cannot find db_user")?;
+                    let db_password = fs::read_to_string(&config.db_password_path)
+                        .context("cannot find db_password")?;
+                    let mut db_url: Url = fs::read_to_string(&config.db_url_path)
+                        .context("cannot find db_url")?
+                        .parse()?;
 
                     db_url
                         .set_username(&db_user)
@@ -70,9 +74,11 @@ async fn main() -> Result<()> {
                     master_password,
                     config.max_cached_accounts,
                     config.db_max_connections,
+                    config.db_conn_timeout_millis,
                     config.db_conn_idle_timeout_millis,
                 )
-                .await?;
+                .await
+                .context("cannot build account manager")?;
 
                 CitaCloudKmsService::new(acc_mgr)
             };
@@ -82,10 +88,11 @@ async fn main() -> Result<()> {
             tonic::transport::Server::builder()
                 .add_service(KmsServiceServer::new(kms_svc))
                 .serve(grpc_addr)
-                .await?;
+                .await
+                .context("cannot start grpc server")?;
         }
         _ => {
-            println!("no command provided");
+            println!("no subcommand provided");
         }
     }
 
