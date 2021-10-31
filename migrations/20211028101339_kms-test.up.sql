@@ -2,7 +2,6 @@
 
 CREATE TABLE IF NOT EXISTS Accounts (
     id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
-    pubkey BINARY(64) NOT NULL,
     -- encrypted with salt
     encrypted_privkey BINARY(32) NOT NULL,
     salt BINARY(16) NOT NULL,

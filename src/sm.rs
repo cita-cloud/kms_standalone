@@ -5,6 +5,8 @@ use rand::Rng;
 use secrecy::ExposeSecret;
 use secrecy::Secret;
 
+use efficient_sm2::KeyPair;
+
 pub const ADDR_BYTES_LEN: usize = 20;
 pub const SM2_PUBKEY_BYTES_LEN: usize = 64;
 pub const SM2_PRIVKEY_BYTES_LEN: usize = 32;
@@ -17,24 +19,24 @@ pub type PublicKey = [u8; SM2_PUBKEY_BYTES_LEN];
 pub type PrivateKey = [u8; SM2_PRIVKEY_BYTES_LEN];
 pub type Signature = [u8; SM2_SIGNATURE_BYTES_LEN];
 
-pub fn sm2_gen_keypair() -> (PublicKey, Secret<PrivateKey>) {
+// return KeyPair is for cache.
+pub fn sm2_gen_keypair() -> (KeyPair, PublicKey, Secret<PrivateKey>) {
     let sk: Secret<PrivateKey> = Secret::new(rand::thread_rng().gen());
     let keypair = efficient_sm2::KeyPair::new(sk.expose_secret().as_slice()).unwrap();
     let pk = keypair.public_key().bytes_less_safe()[1..]
         .try_into()
         .unwrap();
 
-    (pk, sk)
+    (keypair, pk, sk)
 }
 
-pub fn sm2_sign(pubkey: &PublicKey, privkey: &PrivateKey, msg: &[u8]) -> Signature {
-    let key_pair = efficient_sm2::KeyPair::new(privkey).unwrap();
-    let sig = key_pair.sign(msg).unwrap();
+pub fn sm2_sign(key_pair: &KeyPair, msg: &[u8]) -> Signature {
+    let sig = key_pair.sign(msg).expect("sm2 sign failed");
 
     let mut sig_bytes = [0u8; SM2_SIGNATURE_BYTES_LEN];
     sig_bytes[..32].copy_from_slice(&sig.r());
     sig_bytes[32..64].copy_from_slice(&sig.s());
-    sig_bytes[64..].copy_from_slice(pubkey);
+    sig_bytes[64..].copy_from_slice(key_pair.public_key().bytes_less_safe());
     sig_bytes
 }
 

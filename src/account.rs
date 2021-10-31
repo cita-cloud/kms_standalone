@@ -1,9 +1,10 @@
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::sync::Mutex;
+use tokio::task::block_in_place;
 
 use secrecy::ExposeSecret;
 use secrecy::Secret;
@@ -19,9 +20,11 @@ use anyhow::Result;
 
 use rand::Rng;
 
+use efficient_sm2::KeyPair;
+
 use crate::sm::{
     pk2address, sm2_gen_keypair, sm2_sign, sm3_hash, sm4_decrypt, sm4_encrypt, Address, PrivateKey,
-    PublicKey, Signature,
+    Signature,
 };
 
 const SALT_BYTES_LEN: usize = 16;
@@ -37,7 +40,6 @@ pub enum Error {
 
 #[derive(Debug)]
 struct EncryptedAccount {
-    pubkey: Vec<u8>,
     encrypted_privkey: Vec<u8>,
     salt: Vec<u8>,
 }
@@ -48,45 +50,35 @@ struct HashAndSalt {
     salt: Vec<u8>,
 }
 
-// TODO: use KeyPair directly to avoid transform cost
-struct Account {
-    pk: PublicKey,
-    sk: Secret<PrivateKey>,
-}
+// TODO and WARNING
+// KeyPairs are not zeroized after drop. Doing so requires patching efficient_sm2
+struct Account(KeyPair);
 
 impl Account {
-    pub fn generate() -> Self {
-        let (pk, sk) = sm2_gen_keypair();
-        Self { pk, sk }
+    pub fn generate() -> (Account, Address, Secret<PrivateKey>) {
+        let (keypair, pk, sk) = sm2_gen_keypair();
+        let addr = pk2address(&pk);
+        (Account(keypair), addr, sk)
     }
 
     pub fn sign(&self, msg: &[u8]) -> Signature {
-        sm2_sign(&self.pk, self.sk.expose_secret(), msg)
+        sm2_sign(&self.0, msg)
     }
 
     pub fn from_encrypted(encrypted: &EncryptedAccount, master_password: &[u8]) -> Self {
-        let pk = encrypted
-            .pubkey
-            .as_slice()
-            .try_into()
-            .expect("invalid public key length");
         let sk = {
             let buf = SecretVec::new([master_password, &encrypted.salt].concat());
             let password_hash = Secret::new(sm3_hash(buf.expose_secret()));
-            let sk = sm4_decrypt(&encrypted.encrypted_privkey, password_hash.expose_secret())
-                .try_into()
-                .unwrap();
+            let sk: PrivateKey =
+                sm4_decrypt(&encrypted.encrypted_privkey, password_hash.expose_secret())
+                    .try_into()
+                    .unwrap();
             Secret::new(sk)
         };
-        Account { pk, sk }
-    }
+        let keypair =
+            KeyPair::new(sk.expose_secret()).expect("construct keypair from private key failed");
 
-    pub fn expose_privkey(&self) -> &PrivateKey {
-        self.sk.expose_secret()
-    }
-
-    pub fn pubkey(&self) -> &PublicKey {
-        &self.pk
+        Account(keypair)
     }
 }
 
@@ -166,31 +158,31 @@ impl AccountManager {
     }
 
     pub async fn generate_account(&self, description: &str) -> Result<(u64, Address)> {
-        // TODO: maybe block_in_place
-        let account = Account::generate();
-        let address = pk2address(account.pubkey());
-        // I think Ordering::AcqRel will do the job
-        let account_id = self.nonce.fetch_add(1, Ordering::SeqCst);
+        let (account_id, account, encrypted_privkey, address, salt) = block_in_place(|| {
+            let (account, address, sk) = Account::generate();
+            // I think Ordering::AcqRel will do the job
+            let account_id = self.nonce.fetch_add(1, Ordering::SeqCst);
 
-        let salt: Salt = rand::thread_rng().gen();
-        let encrypted_privkey = {
-            let password_hash = {
-                let salted_pw = Secret::new(
-                    [
-                        self.master_password.expose_secret().as_bytes(),
-                        salt.as_slice(),
-                    ]
-                    .concat(),
-                );
-                sm3_hash(salted_pw.expose_secret())
+            let salt: Salt = rand::thread_rng().gen();
+            let encrypted_privkey = {
+                let password_hash = {
+                    let salted_pw = Secret::new(
+                        [
+                            self.master_password.expose_secret().as_bytes(),
+                            salt.as_slice(),
+                        ]
+                        .concat(),
+                    );
+                    sm3_hash(salted_pw.expose_secret())
+                };
+                sm4_encrypt(sk.expose_secret(), &password_hash)
             };
-            sm4_encrypt(account.expose_privkey(), &password_hash)
-        };
+            (account_id, account, encrypted_privkey, address, salt)
+        });
 
         sqlx::query!(
-            "INSERT INTO Accounts (id, pubkey, encrypted_privkey, salt, account_description) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO Accounts (id, encrypted_privkey, salt, account_description) VALUES (?, ?, ?, ?)",
             account_id,
-            account.pubkey().to_vec(),
             encrypted_privkey.to_vec(),
             salt.to_vec(),
             description,
@@ -207,12 +199,11 @@ impl AccountManager {
     pub async fn sign_with(&self, account_id: u64, data: &[u8]) -> Result<Signature> {
         let account = self.cache.lock().await.get(&account_id).cloned();
         if let Some(account) = account {
-            // TODO: block_in_place
-            Ok(account.sign(data))
+            Ok(block_in_place(|| account.sign(data)))
         } else {
             let encrypted = sqlx::query_as!(
                 EncryptedAccount,
-                "SELECT pubkey, encrypted_privkey, salt FROM Accounts WHERE id=?",
+                "SELECT encrypted_privkey, salt FROM Accounts WHERE id=?",
                 account_id
             )
             .fetch_optional(&self.pool)
@@ -220,11 +211,14 @@ impl AccountManager {
             .context("cannot fetch account from database")?;
 
             if let Some(encrypted) = encrypted {
-                let account = Account::from_encrypted(
-                    &encrypted,
-                    self.master_password.expose_secret().as_bytes(),
-                );
-                let sig = account.sign(data);
+                let (account, sig) = block_in_place(|| {
+                    let account = Account::from_encrypted(
+                        &encrypted,
+                        self.master_password.expose_secret().as_bytes(),
+                    );
+                    let sig = account.sign(data);
+                    (account, sig)
+                });
                 self.cache.lock().await.put(account_id, Arc::new(account));
                 Ok(sig)
             } else {
