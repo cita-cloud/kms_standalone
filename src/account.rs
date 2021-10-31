@@ -1,8 +1,8 @@
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use tokio::sync::Mutex;
-use tokio::task::block_in_place;
 
 use secrecy::ExposeSecret;
 use secrecy::Secret;
@@ -48,6 +48,7 @@ struct HashAndSalt {
     salt: Vec<u8>,
 }
 
+// TODO: use KeyPair directly to avoid transform cost
 struct Account {
     pk: PublicKey,
     sk: Secret<PrivateKey>,
@@ -99,9 +100,27 @@ pub struct AccountManager {
 }
 
 impl AccountManager {
-    pub async fn new(db_url: &str, master_password: SecretString) -> Result<Self> {
-        let pool = sqlx::mysql::MySqlPoolOptions::new().connect(db_url).await?;
+    pub async fn new(
+        db_url: &str,
+        master_password: SecretString,
+        max_cached_accounts: usize,
+        db_max_connections: u32,
+        db_conn_idle_timeout_millis: u64,
+    ) -> Result<Self> {
+        let pool = sqlx::mysql::MySqlPoolOptions::new()
+            .max_connections(db_max_connections)
+            .idle_timeout(Duration::from_millis(db_conn_idle_timeout_millis))
+            .connect(db_url)
+            .await?;
         sqlx::migrate!().run(&pool).await?;
+
+        let nonce: u64 = sqlx::query!("SELECT COUNT(*) as nonce FROM Accounts",)
+            .fetch_one(&pool)
+            .await
+            .context("cannot fetch the number of accounts from database")?
+            .nonce
+            .try_into()
+            .unwrap();
 
         let hash_and_salt = sqlx::query_as!(
             HashAndSalt,
@@ -139,10 +158,10 @@ impl AccountManager {
             .context("cannot store master password info into database")?;
         }
         Ok(Self {
-            nonce: AtomicU64::new(1),
+            nonce: AtomicU64::new(nonce),
             master_password,
             pool,
-            cache: Mutex::new(LruCache::new(1024)),
+            cache: Mutex::new(LruCache::new(max_cached_accounts)),
         })
     }
 
