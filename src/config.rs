@@ -1,8 +1,7 @@
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
-use serde::{Deserialize, Serialize};
-
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct KmsConfig {
@@ -20,7 +19,7 @@ pub struct KmsConfig {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct Config {
     #[serde(rename = "kms_standalone")]
-    kms: KmsConfig
+    kms: KmsConfig,
 }
 
 pub fn load_config(path: impl AsRef<Path>) -> KmsConfig {

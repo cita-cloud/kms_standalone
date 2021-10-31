@@ -9,23 +9,30 @@ use secrecy::Secret;
 use secrecy::SecretString;
 use secrecy::SecretVec;
 
-use sqlx::MySqlPool;
 use lru::LruCache;
+use sqlx::MySqlPool;
+
+use anyhow::bail;
+use anyhow::Context;
+use anyhow::Result;
 
 use rand::Rng;
 
 use crate::sm::{
-    Address, PublicKey, PrivateKey, Signature,
-    pk2address,
-    sm2_gen_keypair, sm2_sign,
-    sm3_hash,
-    sm4_encrypt, sm4_decrypt
+    pk2address, sm2_gen_keypair, sm2_sign, sm3_hash, sm4_decrypt, sm4_encrypt, Address, PrivateKey,
+    PublicKey, Signature,
 };
-
 
 const SALT_BYTES_LEN: usize = 16;
 type Salt = [u8; SALT_BYTES_LEN];
 
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("Master password mismatched")]
+    MasterPasswordMismatched,
+    #[error("Account with id `{0}` not found")]
+    AccountNotFound(u64),
+}
 
 #[derive(Debug)]
 struct EncryptedAccount {
@@ -53,21 +60,24 @@ impl Account {
     }
 
     pub fn sign(&self, msg: &[u8]) -> Signature {
-        sm2_sign(&self.pk, &self.sk.expose_secret(), msg)
+        sm2_sign(&self.pk, self.sk.expose_secret(), msg)
     }
 
     pub fn from_encrypted(encrypted: &EncryptedAccount, master_password: &[u8]) -> Self {
-        let pk = encrypted.pubkey.as_slice().try_into().expect("invalid public key length");
+        let pk = encrypted
+            .pubkey
+            .as_slice()
+            .try_into()
+            .expect("invalid public key length");
         let sk = {
             let buf = SecretVec::new([master_password, &encrypted.salt].concat());
             let password_hash = Secret::new(sm3_hash(buf.expose_secret()));
-            let sk = sm4_decrypt(&encrypted.encrypted_privkey, password_hash.expose_secret(),).try_into().unwrap();
+            let sk = sm4_decrypt(&encrypted.encrypted_privkey, password_hash.expose_secret())
+                .try_into()
+                .unwrap();
             Secret::new(sk)
         };
-        Account {
-            pk,
-            sk,
-        }
+        Account { pk, sk }
     }
 
     pub fn expose_privkey(&self) -> &PrivateKey {
@@ -88,14 +98,10 @@ pub struct AccountManager {
     cache: Mutex<LruCache<u64, Account>>,
 }
 
-impl AccountManager
-{
-    pub async fn new(db_url: &str, master_password: SecretString) -> Self {
-        let pool = sqlx::mysql::MySqlPoolOptions::new()
-            .connect(db_url)
-            .await
-            .unwrap();
-        sqlx::migrate!().run(&pool).await.unwrap();
+impl AccountManager {
+    pub async fn new(db_url: &str, master_password: SecretString) -> Result<Self> {
+        let pool = sqlx::mysql::MySqlPoolOptions::new().connect(db_url).await?;
+        sqlx::migrate!().run(&pool).await?;
 
         let hash_and_salt = sqlx::query_as!(
             HashAndSalt,
@@ -103,17 +109,24 @@ impl AccountManager
         )
         .fetch_optional(&pool)
         .await
-        .unwrap();
+        .context("cannot fetch master password info from database")?;
 
-        if let Some(HashAndSalt{ password_hash, salt }) = hash_and_salt {
-            let salted_pw = Secret::new([master_password.expose_secret().as_bytes(), salt.as_slice()].concat());
+        if let Some(HashAndSalt {
+            password_hash,
+            salt,
+        }) = hash_and_salt
+        {
+            let salted_pw =
+                Secret::new([master_password.expose_secret().as_bytes(), salt.as_slice()].concat());
             if password_hash != sm3_hash(salted_pw.expose_secret()) {
-                panic!("wrong password");
+                bail!(Error::MasterPasswordMismatched);
             }
         } else {
             let salt: Salt = rand::thread_rng().gen();
             let salted_pw_hash = {
-                let salted_pw = Secret::new([master_password.expose_secret().as_bytes(), salt.as_slice()].concat());
+                let salted_pw = Secret::new(
+                    [master_password.expose_secret().as_bytes(), salt.as_slice()].concat(),
+                );
                 sm3_hash(salted_pw.expose_secret())
             };
             sqlx::query!(
@@ -123,27 +136,33 @@ impl AccountManager
             )
             .execute(&pool)
             .await
-            .unwrap();
+            .context("cannot store master password info into database")?;
         }
-        Self {
+        Ok(Self {
             nonce: AtomicU64::new(1),
             master_password,
             pool,
-            cache: Mutex::new(LruCache::new(1024))
-        }
+            cache: Mutex::new(LruCache::new(1024)),
+        })
     }
 
-    pub async fn generate_account(&self, description: &str) -> (u64, Address) {
+    pub async fn generate_account(&self, description: &str) -> Result<(u64, Address)> {
         // TODO: maybe block_in_place
         let account = Account::generate();
         let address = pk2address(account.pubkey());
-        // I think Ordering::Release will do the job
+        // I think Ordering::AcqRel will do the job
         let account_id = self.nonce.fetch_add(1, Ordering::SeqCst);
 
         let salt: Salt = rand::thread_rng().gen();
         let encrypted_privkey = {
             let password_hash = {
-                let salted_pw = Secret::new([self.master_password.expose_secret().as_bytes(), salt.as_slice()].concat());
+                let salted_pw = Secret::new(
+                    [
+                        self.master_password.expose_secret().as_bytes(),
+                        salt.as_slice(),
+                    ]
+                    .concat(),
+                );
                 sm3_hash(salted_pw.expose_secret())
             };
             sm4_encrypt(account.expose_privkey(), &password_hash)
@@ -159,36 +178,40 @@ impl AccountManager
         )
         .execute(&self.pool)
         .await
-        .unwrap();
+        .context("cannot store new account into database")?;
 
         self.cache.lock().await.put(account_id, account);
 
-        (account_id, address)
+        Ok((account_id, address))
     }
 
-    pub async fn sign_with(&self, account_id: u64, data: &[u8]) -> Option<Signature> {
+    pub async fn sign_with(&self, account_id: u64, data: &[u8]) -> Result<Signature> {
         let mut guard = self.cache.lock().await;
         if let Some(account) = guard.get(&account_id) {
             // TODO: block_in_place
-            Some(account.sign(data))
+            Ok(account.sign(data))
         } else {
             drop(guard);
 
             let encrypted = sqlx::query_as!(
                 EncryptedAccount,
-                "SELECT id, pubkey, encrypted_privkey, salt FROM Accounts WHERE id=?", account_id
+                "SELECT id, pubkey, encrypted_privkey, salt FROM Accounts WHERE id=?",
+                account_id
             )
             .fetch_optional(&self.pool)
             .await
-            .unwrap();
+            .context("cannot fetch account from database")?;
 
             if let Some(encrypted) = encrypted {
-                let account = Account::from_encrypted(&encrypted, self.master_password.expose_secret().as_bytes());
+                let account = Account::from_encrypted(
+                    &encrypted,
+                    self.master_password.expose_secret().as_bytes(),
+                );
                 let sig = account.sign(data);
                 self.cache.lock().await.put(account_id, account);
-                Some(sig)
+                Ok(sig)
             } else {
-                None
+                bail!(Error::AccountNotFound(account_id));
             }
         }
     }
