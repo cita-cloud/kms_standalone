@@ -17,8 +17,8 @@ use anyhow::Result;
 use tracing::info;
 use tracing::Level;
 
-use url::Url;
 use secrecy::SecretString;
+use url::Url;
 
 use account::AccountManager;
 use config::load_config;
@@ -27,35 +27,38 @@ use server::CitaCloudKmsService;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let run_cmd = App::new("run").alias("r").about("run kms service").arg(
-        Arg::new("config")
-            .about("the kms config")
-            .takes_value(true)
-            .validator(|s| s.parse::<PathBuf>())
-            .default_value("config.toml"),
-    )
-    .arg(
-        Arg::new("stdout")
-            .about("if specified, log to stdout")
-            .long("stdout")
-            .conflicts_with_all(&["log-dir", "log-file-name"]),
-    )
-    .arg(
-        Arg::new("log-dir")
-            .about("the log dir")
-            .short('d')
-            .long("log-dir")
-            .takes_value(true)
-            .validator(|s| s.parse::<PathBuf>()),
-    )
-    .arg(
-        Arg::new("log-file-name")
-            .about("the log file name")
-            .short('f')
-            .long("log-file-name")
-            .takes_value(true)
-            .validator(|s| s.parse::<PathBuf>()),
-    );
+    let run_cmd = App::new("run")
+        .alias("r")
+        .about("run kms service")
+        .arg(
+            Arg::new("config")
+                .about("the kms config")
+                .takes_value(true)
+                .validator(|s| s.parse::<PathBuf>())
+                .default_value("config.toml"),
+        )
+        .arg(
+            Arg::new("stdout")
+                .about("if specified, log to stdout")
+                .long("stdout")
+                .conflicts_with_all(&["log-dir", "log-file-name"]),
+        )
+        .arg(
+            Arg::new("log-dir")
+                .about("the log dir")
+                .short('d')
+                .long("log-dir")
+                .takes_value(true)
+                .validator(|s| s.parse::<PathBuf>()),
+        )
+        .arg(
+            Arg::new("log-file-name")
+                .about("the log file name")
+                .short('f')
+                .long("log-file-name")
+                .takes_value(true)
+                .validator(|s| s.parse::<PathBuf>()),
+        );
 
     let app = App::new("kms")
         .about("KMS service for CITA-Cloud and can be used as a standalone service")
@@ -130,7 +133,10 @@ async fn main() -> Result<()> {
                 .parse()
                 .unwrap();
 
-            info!("start kms service, listen grpc on `0.0.0.0:{}`", config.grpc_listen_port);
+            info!(
+                "start kms service, listen grpc on `0.0.0.0:{}`",
+                config.grpc_listen_port
+            );
             tonic::transport::Server::builder()
                 .add_service(KmsServiceServer::new(kms_svc))
                 .serve(grpc_addr)
