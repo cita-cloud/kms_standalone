@@ -138,7 +138,7 @@ async fn main() -> Result<()> {
                 .await
                 .context("cannot generate account")?;
             println!("account_id: {}", account_id);
-            println!("addr: 0x{}", hex::encode(&addr));
+            println!("address: 0x{}", hex::encode(&addr));
         }
         _ => {
             println!("no subcommand provided");

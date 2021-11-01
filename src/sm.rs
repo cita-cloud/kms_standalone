@@ -39,7 +39,7 @@ pub fn sm2_sign(key_pair: &KeyPair, msg: &[u8]) -> Signature {
     let mut sig_bytes = [0u8; SM2_SIGNATURE_BYTES_LEN];
     sig_bytes[..32].copy_from_slice(&sig.r());
     sig_bytes[32..64].copy_from_slice(&sig.s());
-    sig_bytes[64..].copy_from_slice(key_pair.public_key().bytes_less_safe());
+    sig_bytes[64..].copy_from_slice(&key_pair.public_key().bytes_less_safe()[1..]);
     sig_bytes
 }
 
