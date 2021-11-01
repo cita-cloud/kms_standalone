@@ -3,17 +3,16 @@ use tokio::task::block_in_place;
 use anyhow::Result;
 
 use crate::proto::{
-    Empty, GenerateKeyPairRequest, GenerateKeyPairResponse, GetCryptoInfoResponse, Hash,
-    HashDataRequest, HashResponse, KmsService, RawTransactions, RecoverSignatureRequest,
-    RecoverSignatureResponse, SignMessageRequest, SignMessageResponse, StatusCode,
-    VerifyDataHashRequest,
+    Empty, GenerateKeyPairRequest, GenerateKeyPairResponse, GetCryptoInfoResponse, HashDataRequest,
+    HashDataResponse, KmsService, RecoverSignatureRequest, RecoverSignatureResponse,
+    SignMessageRequest, SignMessageResponse, SimpleResponse, VerifyDataHashRequest,
 };
 
 use crate::account::AccountManager;
 use crate::account::Error as AccountError;
 use crate::sm::{
-    pk2address, sm2_recover_signature, sm3_hash, Signature,
-    ADDR_BYTES_LEN, SM2_SIGNATURE_BYTES_LEN, SM3_HASH_BYTES_LEN,
+    pk2address, sm2_recover_signature, sm3_hash, Signature, ADDR_BYTES_LEN,
+    SM2_SIGNATURE_BYTES_LEN, SM3_HASH_BYTES_LEN,
 };
 
 const KMS_SERVICE_NAME: &str = "kms_standalone";
@@ -37,7 +36,6 @@ impl KmsService for CitaCloudKmsService {
         _request: tonic::Request<Empty>,
     ) -> Result<tonic::Response<GetCryptoInfoResponse>, tonic::Status> {
         let resp = GetCryptoInfoResponse {
-            status: Some(StatusCode { code: 0 }),
             name: KMS_SERVICE_NAME.into(),
             address_len: ADDR_BYTES_LEN as u32,
             hash_len: SM3_HASH_BYTES_LEN as u32,
@@ -58,7 +56,6 @@ impl KmsService for CitaCloudKmsService {
         match self.0.sign_with(key_id, &msg).await {
             Ok(sig) => {
                 let resp = SignMessageResponse {
-                    status: Some(StatusCode { code: 0 }),
                     signature: sig.to_vec(),
                 };
                 Ok(tonic::Response::new(resp))
@@ -66,14 +63,17 @@ impl KmsService for CitaCloudKmsService {
             Err(e) => {
                 match e.downcast::<AccountError>() {
                     Ok(e @ AccountError::AccountNotFound(_)) => {
-                        return Err(tonic::Status::not_found(e.to_string()))
+                        Err(tonic::Status::not_found(e.to_string()))
                     }
-                    Ok(_) => unreachable!(),
+                    Ok(e) => {
+                        // This is unreachable in current impl, but for future proof here.
+                        Err(tonic::Status::internal(e.to_string()))
+                    }
                     Err(e) => {
                         // TODO
                         // log here and consider if it's propriate
                         // to report internal details to client.
-                        return Err(tonic::Status::internal(e.to_string()));
+                        Err(tonic::Status::internal(e.to_string()))
                     }
                 }
             }
@@ -83,17 +83,12 @@ impl KmsService for CitaCloudKmsService {
     async fn hash_data(
         &self,
         request: tonic::Request<HashDataRequest>,
-    ) -> Result<tonic::Response<HashResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<HashDataResponse>, tonic::Status> {
         let data = request.into_inner().data;
         // TODO: bench to check if it needs block_in_place
-        let hash = block_in_place(|| sm3_hash(&data));
+        let hash = block_in_place(|| sm3_hash(&data)).to_vec();
 
-        Ok(tonic::Response::new(HashResponse {
-            status: Some(StatusCode { code: 0 }),
-            hash: Some(Hash {
-                hash: hash.to_vec(),
-            }),
-        }))
+        Ok(tonic::Response::new(HashDataResponse { hash }))
     }
 
     async fn generate_key_pair(
@@ -116,7 +111,7 @@ impl KmsService for CitaCloudKmsService {
     async fn verify_data_hash(
         &self,
         request: tonic::Request<VerifyDataHashRequest>,
-    ) -> Result<tonic::Response<StatusCode>, tonic::Status> {
+    ) -> Result<tonic::Response<SimpleResponse>, tonic::Status> {
         let (data, expected_hash) = {
             let request = request.into_inner();
             (request.data, request.hash)
@@ -125,15 +120,9 @@ impl KmsService for CitaCloudKmsService {
         // TODO: bench to check if it needs block_in_place
         let actual_hash = block_in_place(|| sm3_hash(&data));
 
-        let code = if expected_hash == actual_hash {
-            0
-        } else {
-            // just some random error code indicating data hash mismatched
-            // that doesn't happen to be in the status code repo.
-            /*2*/333
-        };
-
-        Ok(tonic::Response::new(StatusCode { code }))
+        Ok(tonic::Response::new(SimpleResponse {
+            is_success: expected_hash == actual_hash,
+        }))
     }
 
     async fn recover_signature(
@@ -150,30 +139,17 @@ impl KmsService for CitaCloudKmsService {
         };
 
         let resp = {
-            let addr = block_in_place(|| {
-                sm2_recover_signature(&msg, &signature).map(|pk| pk2address(&pk))
+            let address = block_in_place(|| {
+                // We return an empty Vec indicating invalid signature.
+                // This behaviour is different from the original kms_sm that returns
+                // a status::invalid_argument (which is an abuse of this status)
+                sm2_recover_signature(&msg, &signature)
+                    .map(|pk| pk2address(&pk).to_vec())
+                    .unwrap_or_default()
             });
-            if let Some(addr) = addr {
-                RecoverSignatureResponse {
-                    status: Some(StatusCode { code: 0 }),
-                    address: addr.to_vec(),
-                }
-            } else {
-                RecoverSignatureResponse {
-                    status: Some(StatusCode { code: 0 }),
-                    address: vec![],
-                }
-            }
+
+            RecoverSignatureResponse { address }
         };
         Ok(tonic::Response::new(resp))
-    }
-
-    async fn check_transactions(
-        &self,
-        _request: tonic::Request<RawTransactions>,
-    ) -> Result<tonic::Response<StatusCode>, tonic::Status> {
-        Err(tonic::Status::unimplemented(
-            "This is controller's logic, shouldn't leak to kms",
-        ))
     }
 }
