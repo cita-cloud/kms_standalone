@@ -1,3 +1,6 @@
+// cita_cloud_proto version v6.3.0
+// https://github.com/cita-cloud/cita_cloud_proto
+
 mod blockchain {
     tonic::include_proto!("blockchain");
 }

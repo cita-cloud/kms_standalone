@@ -90,6 +90,7 @@ async fn main() -> Result<()> {
                 // TODO: Is it necessary to wrap db_password and db_url in secret?
                 // I believe them will have footprint during encoding and eventually be stored somewhere non-secret,
                 // and it's less important than master_password.
+                // TODO: maybe use `sqlx::mysql::MySqlConnectOptions` instead
                 let db_url = {
                     let db_user =
                         fs::read_to_string(&config.db_user_path).context("cannot find db_user")?;
