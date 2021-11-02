@@ -169,3 +169,40 @@ Status code distribution:
   [OK]   1000000 responses
 
 ```
+
+```
+$ ./ghz --proto ./proto/kms.proto --call kms.KmsService/HashData -d '{"data": "zF1F5xUhveGShe28Q+Dc/D5R2B3xQBXCWwj+asMLg70="}' --insecure -c 128 -n 1000000 127.0.0.1:50005
+
+Summary:
+  Count:        1000000
+  Total:        30.92 s
+  Slowest:      29.87 ms
+  Fastest:      0.07 ms
+  Average:      2.18 ms
+  Requests/sec: 32336.74
+
+Response time histogram:
+  0.073  [1]      |
+  3.053  [784212] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
+  6.033  [206611] |∎∎∎∎∎∎∎∎∎∎∎
+  9.013  [8883]   |
+  11.993 [251]    |
+  14.974 [24]     |
+  17.954 [13]     |
+  20.934 [2]      |
+  23.914 [2]      |
+  26.895 [0]      |
+  29.875 [1]      |
+
+Latency distribution:
+  10 % in 0.84 ms
+  25 % in 1.24 ms
+  50 % in 1.91 ms
+  75 % in 2.87 ms
+  90 % in 3.91 ms
+  95 % in 4.55 ms
+  99 % in 5.95 ms
+
+Status code distribution:
+  [OK]   1000000 responses
+```
