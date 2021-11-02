@@ -1,4 +1,4 @@
-// cita_cloud_proto version v6.3.0
+// cita_cloud_proto version v6.2.0
 // https://github.com/cita-cloud/cita_cloud_proto
 
 mod blockchain {
@@ -13,15 +13,10 @@ mod kms {
     tonic::include_proto!("kms");
 }
 
-pub use blockchain::RawTransactions;
-pub use common::{
-    Empty, Hash,
-    StatusCode,
-    HashResponse,
-};
+pub use common::{Empty, Hash, SimpleResponse};
 pub use kms::{
     kms_service_server::{KmsService, KmsServiceServer},
     GenerateKeyPairRequest, GenerateKeyPairResponse, GetCryptoInfoResponse, HashDataRequest,
-    RecoverSignatureRequest, RecoverSignatureResponse, SignMessageRequest, SignMessageResponse,
-    VerifyDataHashRequest,
+    HashDataResponse, RecoverSignatureRequest, RecoverSignatureResponse, SignMessageRequest,
+    SignMessageResponse, VerifyDataHashRequest,
 };

@@ -17,49 +17,67 @@ use anyhow::Result;
 use tracing::info;
 use tracing::Level;
 
-use url::Url;
 use secrecy::SecretString;
+use url::Url;
 
 use account::AccountManager;
 use config::load_config;
+use config::KmsConfig;
 use proto::KmsServiceServer;
 use server::CitaCloudKmsService;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let run_cmd = App::new("run").alias("r").about("run kms service").arg(
-        Arg::new("config")
-            .about("the kms config")
-            .takes_value(true)
-            .validator(|s| s.parse::<PathBuf>())
-            .default_value("config.toml"),
-    )
-    .arg(
-        Arg::new("stdout")
-            .about("if specified, log to stdout")
-            .long("stdout")
-            .conflicts_with_all(&["log-dir", "log-file-name"]),
-    )
-    .arg(
-        Arg::new("log-dir")
-            .about("the log dir")
-            .short('d')
-            .long("log-dir")
-            .takes_value(true)
-            .validator(|s| s.parse::<PathBuf>()),
-    )
-    .arg(
-        Arg::new("log-file-name")
-            .about("the log file name")
-            .short('f')
-            .long("log-file-name")
-            .takes_value(true)
-            .validator(|s| s.parse::<PathBuf>()),
-    );
+    // TODO: refactor those cli interface
+
+    // args
+    let config_arg = Arg::new("config")
+        .about("the kms config")
+        .takes_value(true)
+        .validator(|s| s.parse::<PathBuf>())
+        .default_value("config.toml");
+
+    let stdout_arg = Arg::new("stdout")
+        .about("if specified, log to stdout")
+        .long("stdout")
+        .conflicts_with_all(&["log-dir", "log-file-name"]);
+
+    let log_dir_arg = Arg::new("log-dir")
+        .about("the log dir")
+        .short('d')
+        .long("log-dir")
+        .takes_value(true)
+        .validator(|s| s.parse::<PathBuf>());
+
+    let log_file_name_arg = Arg::new("log-file-name")
+        .about("the log file name")
+        .short('f')
+        .long("log-file-name")
+        .takes_value(true)
+        .validator(|s| s.parse::<PathBuf>());
+
+    // cmds
+    let run_cmd = App::new("run")
+        .alias("r")
+        .about("run kms service")
+        .arg(config_arg.clone())
+        .arg(stdout_arg)
+        .arg(log_dir_arg)
+        .arg(log_file_name_arg);
+
+    let create_cmd = App::new("create")
+        .alias("c")
+        .about("create an account")
+        .arg(config_arg.long("config"))
+        .arg(
+            Arg::new("description")
+                .about("description of your account, optional")
+                .takes_value(true),
+        );
 
     let app = App::new("kms")
         .about("KMS service for CITA-Cloud and can be used as a standalone service")
-        .subcommands([run_cmd]);
+        .subcommands([run_cmd, create_cmd]);
 
     let matches = app.get_matches();
     match matches.subcommand() {
@@ -87,42 +105,9 @@ async fn main() -> Result<()> {
                 .init();
 
             let kms_svc = {
-                // TODO: Is it necessary to wrap db_password and db_url in secret?
-                // I believe them will have footprint during encoding and eventually be stored somewhere non-secret,
-                // and it's less important than master_password.
-                // TODO: maybe use `sqlx::mysql::MySqlConnectOptions` instead
-                let db_url = {
-                    let db_user =
-                        fs::read_to_string(&config.db_user_path).context("cannot find db_user")?;
-                    let db_password = fs::read_to_string(&config.db_password_path)
-                        .context("cannot find db_password")?;
-                    let mut db_url: Url = fs::read_to_string(&config.db_url_path)
-                        .context("cannot find db_url")?
-                        .parse()?;
-
-                    db_url
-                        .set_username(&db_user)
-                        .map_err(|_| anyhow!("invalid db_url, can't set username for it"))?;
-                    db_url
-                        .set_password(Some(&db_password))
-                        .map_err(|_| anyhow!("invalid db_url, can't set password for it"))?;
-
-                    db_url.to_string()
-                };
-                let master_password =
-                    SecretString::new(fs::read_to_string(&config.db_password_path)?);
-
-                let acc_mgr = AccountManager::new(
-                    &db_url,
-                    master_password,
-                    config.max_cached_accounts,
-                    config.db_max_connections,
-                    config.db_conn_timeout_millis,
-                    config.db_conn_idle_timeout_millis,
-                )
-                .await
-                .context("cannot build account manager")?;
-
+                let acc_mgr = account_manager(&config)
+                    .await
+                    .context("cannot build kms service")?;
                 CitaCloudKmsService::new(acc_mgr)
             };
 
@@ -130,12 +115,30 @@ async fn main() -> Result<()> {
                 .parse()
                 .unwrap();
 
-            info!("start kms service, listen grpc on `0.0.0.0:{}`", config.grpc_listen_port);
+            info!(
+                "start kms service, listen grpc on `0.0.0.0:{}`",
+                config.grpc_listen_port
+            );
             tonic::transport::Server::builder()
                 .add_service(KmsServiceServer::new(kms_svc))
                 .serve(grpc_addr)
                 .await
                 .context("cannot start grpc server")?;
+        }
+        Some(("create", m)) => {
+            let config = {
+                let path = m.value_of("config").unwrap();
+                load_config(path).context("cannot load config")?
+            };
+            let description = m.value_of("description").unwrap_or_default();
+
+            let acc_mgr = account_manager(&config).await?;
+            let (account_id, addr) = acc_mgr
+                .generate_account(description)
+                .await
+                .context("cannot generate account")?;
+            println!("account_id: {}", account_id);
+            println!("address: 0x{}", hex::encode(&addr));
         }
         _ => {
             println!("no subcommand provided");
@@ -143,4 +146,40 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn account_manager(config: &KmsConfig) -> Result<AccountManager> {
+    // TODO: Is it necessary to wrap db_password and db_url in secret?
+    // I believe them will have footprint during encoding and eventually be stored somewhere non-secret,
+    // and it's less important than master_password.
+    // TODO: maybe use `sqlx::mysql::MySqlConnectOptions` instead
+    let db_url = {
+        let db_user = fs::read_to_string(&config.db_user_path).context("cannot find db_user")?;
+        let db_password =
+            fs::read_to_string(&config.db_password_path).context("cannot find db_password")?;
+        let mut db_url: Url = fs::read_to_string(&config.db_url_path)
+            .context("cannot find db_url")?
+            .parse()?;
+
+        db_url
+            .set_username(&db_user)
+            .map_err(|_| anyhow!("invalid db_url, can't set username for it"))?;
+        db_url
+            .set_password(Some(&db_password))
+            .map_err(|_| anyhow!("invalid db_url, can't set password for it"))?;
+
+        db_url.to_string()
+    };
+    let master_password = SecretString::new(fs::read_to_string(&config.db_password_path)?);
+
+    AccountManager::new(
+        &db_url,
+        master_password,
+        config.max_cached_accounts,
+        config.db_max_connections,
+        config.db_conn_timeout_millis,
+        config.db_conn_idle_timeout_millis,
+    )
+    .await
+    .context("cannot build account manager")
 }

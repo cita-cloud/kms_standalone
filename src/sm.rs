@@ -1,6 +1,9 @@
 // WARNING: efficient_sm2 and libsm didn't consider the potential security risk that
 // privkey/secret leaks from un-zeroized memory. Using Secret is as far as we can do now.
 
+// Reference impl here, with some improvement.
+// https://github.com/cita-cloud/kms_sm
+
 use rand::Rng;
 use secrecy::ExposeSecret;
 use secrecy::Secret;
@@ -36,7 +39,7 @@ pub fn sm2_sign(key_pair: &KeyPair, msg: &[u8]) -> Signature {
     let mut sig_bytes = [0u8; SM2_SIGNATURE_BYTES_LEN];
     sig_bytes[..32].copy_from_slice(&sig.r());
     sig_bytes[32..64].copy_from_slice(&sig.s());
-    sig_bytes[64..].copy_from_slice(key_pair.public_key().bytes_less_safe());
+    sig_bytes[64..].copy_from_slice(&key_pair.public_key().bytes_less_safe()[1..]);
     sig_bytes
 }
 
@@ -68,9 +71,7 @@ pub fn sm4_decrypt(data: &[u8], password_hash: &[u8]) -> Vec<u8> {
 }
 
 pub fn sm3_hash(input: &[u8]) -> Hash {
-    let mut result = [0u8; SM3_HASH_BYTES_LEN];
-    result.copy_from_slice(libsm::sm3::hash::Sm3Hash::new(input).get_hash().as_ref());
-    result
+    libsm::sm3::hash::Sm3Hash::new(input).get_hash()
 }
 
 pub fn pk2address(pk: &PublicKey) -> Address {

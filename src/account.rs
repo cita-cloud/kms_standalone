@@ -3,24 +3,24 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::Mutex;
-use tokio::task::block_in_place;
-
 use secrecy::ExposeSecret;
 use secrecy::Secret;
 use secrecy::SecretString;
 use secrecy::SecretVec;
 
-use lru::LruCache;
-use sqlx::MySqlPool;
-
 use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 
-use rand::Rng;
+use lru::LruCache;
+use parking_lot::Mutex;
+use sqlx::MySqlPool;
+
+use tokio::task::block_in_place;
 
 use efficient_sm2::KeyPair;
+
+use rand::Rng;
 
 use crate::sm::{
     pk2address, sm2_gen_keypair, sm2_sign, sm3_hash, sm4_decrypt, sm4_encrypt, Address, PrivateKey,
@@ -197,13 +197,13 @@ impl AccountManager {
         .await
         .context("cannot store new account into database")?;
 
-        self.cache.lock().await.put(account_id, Arc::new(account));
+        self.cache.lock().put(account_id, Arc::new(account));
 
         Ok((account_id, address))
     }
 
     pub async fn sign_with(&self, account_id: u64, data: &[u8]) -> Result<Signature> {
-        let account = self.cache.lock().await.get(&account_id).cloned();
+        let account = self.cache.lock().get(&account_id).cloned();
         if let Some(account) = account {
             Ok(block_in_place(|| account.sign(data)))
         } else {
@@ -225,7 +225,7 @@ impl AccountManager {
                     let sig = account.sign(data);
                     (account, sig)
                 });
-                self.cache.lock().await.put(account_id, Arc::new(account));
+                self.cache.lock().put(account_id, Arc::new(account));
                 Ok(sig)
             } else {
                 bail!(Error::AccountNotFound(account_id));
