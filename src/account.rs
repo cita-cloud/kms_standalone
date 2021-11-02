@@ -6,7 +6,6 @@ use std::time::Duration;
 use secrecy::ExposeSecret;
 use secrecy::Secret;
 use secrecy::SecretString;
-use secrecy::SecretVec;
 
 use anyhow::bail;
 use anyhow::Context;
@@ -67,7 +66,7 @@ impl Account {
 
     pub fn from_encrypted(encrypted: &EncryptedAccount, master_password: &[u8]) -> Self {
         let sk = {
-            let buf = SecretVec::new([master_password, &encrypted.salt].concat());
+            let buf = Secret::new([master_password, &encrypted.salt].concat());
             let password_hash = Secret::new(sm3_hash(buf.expose_secret()));
             let sk: PrivateKey =
                 sm4_decrypt(&encrypted.encrypted_privkey, password_hash.expose_secret())
@@ -179,9 +178,9 @@ impl AccountManager {
                         ]
                         .concat(),
                     );
-                    sm3_hash(salted_pw.expose_secret())
+                    Secret::new(sm3_hash(salted_pw.expose_secret()))
                 };
-                sm4_encrypt(sk.expose_secret(), &password_hash)
+                sm4_encrypt(sk.expose_secret(), password_hash.expose_secret())
             };
             (account_id, account, encrypted_privkey, address, salt)
         });
