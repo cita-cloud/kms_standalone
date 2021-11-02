@@ -6,6 +6,7 @@ It currently only supports 国密(Chinese Cryptographic Standards) and MySQL dat
 
 WARNING:
 Private keys are cached unencrypted in memory, and it's not zeroized during construction and after drop.
+
 The former is for performance, the later needs to patch the crypto library.
 
 Secret memory are zeroized otherwise possible.
@@ -131,3 +132,40 @@ Status code distribution:
   [OK]   1000000 response
 ```
 
+```
+$ ./ghz --proto ./proto/kms.proto --call kms.KmsService/RecoverSignature -d '{ "msg": "zF1F5xUhveGShe28Q+Dc/D5R2B3xQBXCWwj+asMLg70=", "signature": "m0mAIri0Bpkk86SS8orFMKsSH+ghYxhCbVMGpZBR+Pj1jwhGDGVxVJHrBAX1JRJAzNbkP/HcpsKzkLVfahYj18p6ZcQQbvUauA1hZUfqmKKsHMJiVeM8wnQT6mtSieaPKN07xOavLwpChbLNbXm/BCKG7nNBlzSZbg945Q719cA="}' --insecure -c 128 -n 1000000 127.0.0.1:50005
+
+Summary:
+  Count:        1000000
+  Total:        58.13 s
+  Slowest:      26.33 ms
+  Fastest:      0.37 ms
+  Average:      5.08 ms
+  Requests/sec: 17201.55
+
+Response time histogram:
+  0.370  [1]      |
+  2.966  [170929] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
+  5.563  [440181] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
+  8.159  [309165] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
+  10.755 [68552]  |∎∎∎∎∎∎
+  13.351 [9795]   |∎
+  15.947 [1150]   |
+  18.543 [178]    |
+  21.139 [39]     |
+  23.735 [4]      |
+  26.331 [6]      |
+
+Latency distribution:
+  10 % in 2.39 ms
+  25 % in 3.50 ms
+  50 % in 4.96 ms
+  75 % in 6.41 ms
+  90 % in 7.83 ms
+  95 % in 8.80 ms
+  99 % in 10.88 ms
+
+Status code distribution:
+  [OK]   1000000 responses
+
+```
