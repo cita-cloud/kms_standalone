@@ -104,6 +104,8 @@ async fn main() -> Result<()> {
                 .with_writer(writer)
                 .init();
 
+            set_panic_hook();
+
             let kms_svc = {
                 let acc_mgr = account_manager(&config)
                     .await
@@ -131,6 +133,15 @@ async fn main() -> Result<()> {
                 load_config(path).context("cannot load config")?
             };
             let description = m.value_of("description").unwrap_or_default();
+
+            let (writer, _guard) = tracing_appender::non_blocking(std::io::stdout());
+            tracing_subscriber::fmt()
+                .with_max_level(Level::INFO)
+                .with_ansi(false)
+                .with_writer(writer)
+                .init();
+
+            set_panic_hook();
 
             let acc_mgr = account_manager(&config).await?;
             let (account_id, addr) = acc_mgr
@@ -182,4 +193,19 @@ async fn account_manager(config: &KmsConfig) -> Result<AccountManager> {
     )
     .await
     .context("cannot build account manager")
+}
+
+fn set_panic_hook() {
+    std::panic::set_hook(Box::new(|panic| {
+        if let Some(location) = panic.location() {
+            tracing::error!(
+                message = %panic,
+                panic.file = location.file(),
+                panic.line = location.line(),
+                panic.column = location.column(),
+            );
+        } else {
+            tracing::error!(message = %panic);
+        }
+    }));
 }
