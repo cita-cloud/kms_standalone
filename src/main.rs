@@ -134,15 +134,6 @@ async fn main() -> Result<()> {
             };
             let description = m.value_of("description").unwrap_or_default();
 
-            let (writer, _guard) = tracing_appender::non_blocking(std::io::stdout());
-            tracing_subscriber::fmt()
-                .with_max_level(Level::INFO)
-                .with_ansi(false)
-                .with_writer(writer)
-                .init();
-
-            set_panic_hook();
-
             let acc_mgr = account_manager(&config).await?;
             let (account_id, addr) = acc_mgr
                 .generate_account(description)
