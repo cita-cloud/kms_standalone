@@ -43,6 +43,7 @@ Here's an example config. MySQL must be available and the database exists.
 grpc_listen_port = 50005
 
 # File path to corresponding config.
+# BEWARE THE TRAILING CONTROL CHARACTERS LIKE `\r\n` IN THE FILE.
 # It's pretty awkward to do config this way.
 # And it'll be much better if we can just:
 # db_url = "mysql://user:password@host:port/db"
