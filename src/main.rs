@@ -172,7 +172,7 @@ async fn account_manager(config: &KmsConfig) -> Result<AccountManager> {
 
         db_url.to_string()
     };
-    let master_password = SecretString::new(fs::read_to_string(&config.db_password_path)?);
+    let master_password = SecretString::new(fs::read_to_string(&config.master_password_path)?);
 
     AccountManager::new(
         &db_url,
