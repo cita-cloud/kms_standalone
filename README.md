@@ -93,83 +93,88 @@ Note that it's a poor benchmark with many disturbing factors.
 CPU: amd r7 3800x 8 cores
 
 ```sh
-RUSTFLAGS="-C target-cpu=native" cargo build --release
+cargo build --release
 ```
 
+### Sign
 ```
 $ ./ghz --proto ./proto/kms.proto --call kms.KmsService/SignMessage -d '{ "keyId": "0", "msg": "zF1F5xUhveGShe28Q+Dc/D5R2B3xQBXCWwj+asMLg70="}' --insecure -c 128 -n 1000000 127.0.0.1:50005
 
 Summary:
   Count:        1000000
-  Total:        39.58 s
-  Slowest:      23.17 ms
-  Fastest:      0.18 ms
-  Average:      3.07 ms
-  Requests/sec: 25262.68
+  Total:        36.35 s
+  Slowest:      20.86 ms
+  Fastest:      0.14 ms
+  Average:      2.76 ms
+  Requests/sec: 27513.18
 
 Response time histogram:
-  0.176  [1]      |
-  2.476  [374945] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
-  4.775  [511343] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
-  7.075  [99884]  |∎∎∎∎∎∎∎∎
-  9.374  [12644]  |∎
-  11.674 [1003]   |
-  13.973 [131]    |
-  16.273 [30]     |
-  18.572 [12]     |
-  20.872 [6]      |
-  23.171 [1]      |
+  0.143  [1]      |
+  2.214  [383116] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
+  4.286  [491184] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
+  6.358  [108826] |∎∎∎∎∎∎∎∎∎
+  8.430  [14998]  |∎
+  10.501 [1702]   |
+  12.573 [125]    |
+  14.645 [31]     |
+  16.717 [9]      |
+  18.788 [7]      |
+  20.860 [1]      |
 
 Latency distribution:
-  10 % in 1.45 ms
-  25 % in 2.07 ms
-  50 % in 2.86 ms
-  75 % in 3.81 ms
-  90 % in 4.93 ms
-  95 % in 5.71 ms
-  99 % in 7.39 ms
+  10 % in 1.27 ms
+  25 % in 1.83 ms
+  50 % in 2.53 ms
+  75 % in 3.45 ms
+  90 % in 4.54 ms
+  95 % in 5.29 ms
+  99 % in 6.86 ms
 
 Status code distribution:
   [OK]   1000000 responses
 ```
+
+### Verify
 
 ```
 $ ./ghz --proto ./proto/kms.proto --call kms.KmsService/RecoverSignature -d '{ "msg": "zF1F5xUhveGShe28Q+Dc/D5R2B3xQBXCWwj+asMLg70=", "signature": "m0mAIri0Bpkk86SS8orFMKsSH+ghYxhCbVMGpZBR+Pj1jwhGDGVxVJHrBAX1JRJAzNbkP/HcpsKzkLVfahYj18p6ZcQQbvUauA1hZUfqmKKsHMJiVeM8wnQT6mtSieaPKN07xOavLwpChbLNbXm/BCKG7nNBlzSZbg945Q719cA="}' --insecure -c 128 -n 1000000 127.0.0.1:50005
 
 Summary:
   Count:        1000000
-  Total:        58.13 s
-  Slowest:      26.33 ms
-  Fastest:      0.37 ms
-  Average:      5.08 ms
-  Requests/sec: 17201.55
+  Total:        43.98 s
+  Slowest:      20.95 ms
+  Fastest:      0.23 ms
+  Average:      3.54 ms
+  Requests/sec: 22736.60
 
 Response time histogram:
-  0.370  [1]      |
-  2.966  [170929] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
-  5.563  [440181] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
-  8.159  [309165] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
-  10.755 [68552]  |∎∎∎∎∎∎
-  13.351 [9795]   |∎
-  15.947 [1150]   |
-  18.543 [178]    |
-  21.139 [39]     |
-  23.735 [4]      |
-  26.331 [6]      |
+  0.229  [1]      |
+  2.301  [224556] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
+  4.373  [516155] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
+  6.444  [207474] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
+  8.516  [43887]  |∎∎∎
+  10.588 [6971]   |∎
+  12.660 [740]    |
+  14.732 [175]    |
+  16.803 [31]     |
+  18.875 [8]      |
+  20.947 [2]      |
 
 Latency distribution:
-  10 % in 2.39 ms
-  25 % in 3.50 ms
-  50 % in 4.96 ms
-  75 % in 6.41 ms
-  90 % in 7.83 ms
-  95 % in 8.80 ms
-  99 % in 10.88 ms
+  10 % in 1.69 ms
+  25 % in 2.41 ms
+  50 % in 3.35 ms
+  75 % in 4.42 ms
+  90 % in 5.62 ms
+  95 % in 6.49 ms
+  99 % in 8.27 ms
 
 Status code distribution:
   [OK]   1000000 responses
 
 ```
+
+### Hash
 
 ```
 $ ./ghz --proto ./proto/kms.proto --call kms.KmsService/HashData -d '{"data": "zF1F5xUhveGShe28Q+Dc/D5R2B3xQBXCWwj+asMLg70="}' --insecure -c 128 -n 1000000 127.0.0.1:50005
@@ -177,33 +182,34 @@ $ ./ghz --proto ./proto/kms.proto --call kms.KmsService/HashData -d '{"data": "z
 Summary:
   Count:        1000000
   Total:        30.92 s
-  Slowest:      29.87 ms
-  Fastest:      0.07 ms
-  Average:      2.18 ms
-  Requests/sec: 32336.74
+  Slowest:      25.59 ms
+  Fastest:      0.08 ms
+  Average:      2.19 ms
+  Requests/sec: 32343.47
 
 Response time histogram:
-  0.073  [1]      |
-  3.053  [784212] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
-  6.033  [206611] |∎∎∎∎∎∎∎∎∎∎∎
-  9.013  [8883]   |
-  11.993 [251]    |
-  14.974 [24]     |
-  17.954 [13]     |
-  20.934 [2]      |
-  23.914 [2]      |
-  26.895 [0]      |
-  29.875 [1]      |
+  0.079  [1]      |
+  2.630  [697280] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
+  5.181  [278285] |∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎∎
+  7.732  [23057]  |∎
+  10.282 [1289]   |
+  12.833 [66]     |
+  15.384 [13]     |
+  17.935 [3]      |
+  20.486 [4]      |
+  23.036 [1]      |
+  25.587 [1]      |
 
 Latency distribution:
-  10 % in 0.84 ms
-  25 % in 1.24 ms
-  50 % in 1.91 ms
+  10 % in 0.86 ms
+  25 % in 1.26 ms
+  50 % in 1.93 ms
   75 % in 2.87 ms
   90 % in 3.91 ms
-  95 % in 4.55 ms
-  99 % in 5.95 ms
+  95 % in 4.58 ms
+  99 % in 5.99 ms
 
 Status code distribution:
   [OK]   1000000 responses
+
 ```
