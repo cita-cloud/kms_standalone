@@ -171,7 +171,7 @@ impl AccountManager {
         });
 
         sqlx::query!(
-            "INSERT INTO Accounts (id, encrypted_privkey, salt) VALUES (?, ?, ?, ?)",
+            "INSERT INTO Accounts (id, encrypted_privkey, salt) VALUES (?, ?, ?)",
             account_id,
             encrypted_privkey.to_vec(),
             salt.to_vec(),
