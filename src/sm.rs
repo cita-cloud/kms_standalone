@@ -43,6 +43,8 @@ pub fn sm2_sign(key_pair: &KeyPair, msg: &[u8]) -> Signature {
     sig_bytes
 }
 
+// TODO: may use in future
+#[allow(unused)]
 pub fn sm2_recover_signature(msg: &[u8], signature: &Signature) -> Option<PublicKey> {
     let r = &signature[0..32];
     let s = &signature[32..64];

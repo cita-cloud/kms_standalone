@@ -1,0 +1,99 @@
+{
+  "db": "MySQL",
+  "2a197f4adb73805c8b617491be7eb946b249f2654876a7fea6099757cbf8c1c4": {
+    "query": "INSERT INTO MasterPassword (password_hash, salt) VALUES (?, ?)",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 2
+      },
+      "nullable": []
+    }
+  },
+  "36e4713ae6c15fd27e7b0be41159ec52815a2e7faccabebd0fd13152a6afa2ee": {
+    "query": "SELECT password_hash, salt FROM MasterPassword",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "password_hash",
+          "type_info": {
+            "type": "String",
+            "flags": {
+              "bits": 4225
+            },
+            "char_set": 63,
+            "max_size": 32
+          }
+        },
+        {
+          "ordinal": 1,
+          "name": "salt",
+          "type_info": {
+            "type": "String",
+            "flags": {
+              "bits": 4225
+            },
+            "char_set": 63,
+            "max_size": 16
+          }
+        }
+      ],
+      "parameters": {
+        "Right": 0
+      },
+      "nullable": [
+        false,
+        false
+      ]
+    }
+  },
+  "3df13e3d1732f426480eca6b3cb1a17e95c799feed6fd8a9bfc05529ba0489c4": {
+    "query": "SELECT encrypted_privkey, salt FROM Accounts WHERE id=?",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "encrypted_privkey",
+          "type_info": {
+            "type": "String",
+            "flags": {
+              "bits": 4225
+            },
+            "char_set": 63,
+            "max_size": 32
+          }
+        },
+        {
+          "ordinal": 1,
+          "name": "salt",
+          "type_info": {
+            "type": "String",
+            "flags": {
+              "bits": 4225
+            },
+            "char_set": 63,
+            "max_size": 16
+          }
+        }
+      ],
+      "parameters": {
+        "Right": 1
+      },
+      "nullable": [
+        false,
+        false
+      ]
+    }
+  },
+  "9c891af3a907b53a30cc241c428fb771b331d22b794381ab9d959fab34768e25": {
+    "query": "INSERT INTO Accounts (id, encrypted_privkey, salt) VALUES (?, ?, ?)",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Right": 3
+      },
+      "nullable": []
+    }
+  }
+}

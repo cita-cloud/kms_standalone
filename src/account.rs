@@ -27,12 +27,11 @@ use crate::sm::{
 const SALT_BYTES_LEN: usize = 32;
 type Salt = [u8; SALT_BYTES_LEN];
 
+#[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Master password mismatched")]
     MasterPasswordMismatched,
-    #[error("Account with id `{0}` not found")]
-    AccountNotFound(u64),
 }
 
 #[derive(Debug)]
@@ -149,7 +148,7 @@ impl AccountManager {
         })
     }
 
-    pub async fn generate_account(&self, account_id: &str) -> Result<Arc<Account>> {
+    async fn generate_account(&self, account_id: &str) -> Result<Arc<Account>> {
         let (account, encrypted_privkey, salt) = block_in_place(|| {
             let (account, _address, sk) = Account::generate();
 
@@ -196,7 +195,7 @@ impl AccountManager {
         let sigs: Vec<Vec<u8>> = block_in_place(|| {
             use rayon::prelude::*;
             msgs.into_par_iter()
-                .map(|msg| account.sign(&msg).into())
+                .map(|msg| account.sign(msg).into())
                 .collect()
         });
 

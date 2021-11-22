@@ -117,7 +117,7 @@ async fn main() -> Result<()> {
                 .context("cannot start grpc server")?;
         }
         _ => {
-            app.print_help();
+            app.print_help().context("cannot print help")?;
             bail!("no subcommand provided");
         }
     }
