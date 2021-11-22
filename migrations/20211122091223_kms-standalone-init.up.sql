@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS Accounts (
     id VARCHAR(255) NOT NULL PRIMARY KEY,
     -- encrypted with salt
     encrypted_privkey BINARY(32) NOT NULL,
-    salt BINARY(16) NOT NULL,
+    salt BINARY(16) NOT NULL
 );
 
 -- Those funny stuff is to constrain this table to only one row.
