@@ -1,13 +1,8 @@
--- Add up migration script here
-
 CREATE TABLE IF NOT EXISTS Accounts (
-    id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+    id VARCHAR(255) NOT NULL PRIMARY KEY,
     -- encrypted with salt
     encrypted_privkey BINARY(32) NOT NULL,
     salt BINARY(16) NOT NULL,
-
-    -- long name since `description` is a reserved keyword
-    account_description TEXT
 );
 
 -- Those funny stuff is to constrain this table to only one row.

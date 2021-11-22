@@ -1,5 +1,3 @@
-use std::sync::atomic::AtomicU64;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -82,12 +80,10 @@ impl Account {
 }
 
 pub struct AccountManager {
-    nonce: AtomicU64,
-
     master_password: SecretString,
 
     pool: MySqlPool,
-    cache: Mutex<LruCache<u64, Arc<Account>>>,
+    cache: Mutex<LruCache<String, Arc<Account>>>,
 }
 
 impl AccountManager {
@@ -110,14 +106,6 @@ impl AccountManager {
             .run(&pool)
             .await
             .context("cannot run migration")?;
-
-        let nonce: u64 = sqlx::query!("SELECT COUNT(*) as nonce FROM Accounts")
-            .fetch_one(&pool)
-            .await
-            .context("cannot fetch the number of accounts from database")?
-            .nonce
-            .try_into()
-            .unwrap();
 
         let hash_and_salt = sqlx::query_as!(
             HashAndSalt,
@@ -155,18 +143,15 @@ impl AccountManager {
             .context("cannot store master password info into database")?;
         }
         Ok(Self {
-            nonce: AtomicU64::new(nonce),
             master_password,
             pool,
             cache: Mutex::new(LruCache::new(max_cached_accounts)),
         })
     }
 
-    pub async fn generate_account(&self, description: &str) -> Result<(u64, Address)> {
-        let (account_id, account, encrypted_privkey, address, salt) = block_in_place(|| {
+    pub async fn generate_account(&self, account_id: &str) -> Result<Arc<Account>> {
+        let (account, encrypted_privkey, address, salt) = block_in_place(|| {
             let (account, address, sk) = Account::generate();
-            // I think Ordering::AcqRel will do the job
-            let account_id = self.nonce.fetch_add(1, Ordering::SeqCst);
 
             let salt: Salt = rand::thread_rng().gen();
             let encrypted_privkey = {
@@ -182,52 +167,74 @@ impl AccountManager {
                 };
                 sm4_encrypt(sk.expose_secret(), password_hash.expose_secret())
             };
-            (account_id, account, encrypted_privkey, address, salt)
+            (Arc::new(account), encrypted_privkey, address, salt)
         });
 
         sqlx::query!(
-            "INSERT INTO Accounts (id, encrypted_privkey, salt, account_description) VALUES (?, ?, ?, ?)",
+            "INSERT INTO Accounts (id, encrypted_privkey, salt) VALUES (?, ?, ?, ?)",
             account_id,
             encrypted_privkey.to_vec(),
             salt.to_vec(),
-            description,
         )
         .execute(&self.pool)
         .await
         .context("cannot store new account into database")?;
 
-        self.cache.lock().put(account_id, Arc::new(account));
+        self.cache
+            .lock()
+            .put(account_id.into(), Arc::clone(&account));
 
-        Ok((account_id, address))
+        Ok(account)
     }
 
-    pub async fn sign_with(&self, account_id: u64, data: &[u8]) -> Result<Signature> {
-        let account = self.cache.lock().get(&account_id).cloned();
-        if let Some(account) = account {
-            Ok(block_in_place(|| account.sign(data)))
-        } else {
-            let encrypted = sqlx::query_as!(
-                EncryptedAccount,
-                "SELECT encrypted_privkey, salt FROM Accounts WHERE id=?",
-                account_id
-            )
-            .fetch_optional(&self.pool)
+    pub async fn sign_with(&self, account_id: &str, msgs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
+        let account = self
+            .fetch_or_create_account(account_id)
             .await
-            .context("cannot fetch account from database")?;
+            .with_context(|| format!("cannot fetch or create account `{}`", account_id))?;
 
-            if let Some(encrypted) = encrypted {
-                let (account, sig) = block_in_place(|| {
-                    let account = Account::from_encrypted(
-                        &encrypted,
-                        self.master_password.expose_secret().as_bytes(),
-                    );
-                    let sig = account.sign(data);
-                    (account, sig)
-                });
-                self.cache.lock().put(account_id, Arc::new(account));
-                Ok(sig)
-            } else {
-                bail!(Error::AccountNotFound(account_id));
+        let sigs: Vec<Vec<u8>> = block_in_place(|| {
+            use rayon::prelude::*;
+            msgs.into_par_iter()
+                .map(|msg| account.sign(&msg).into())
+                .collect()
+        });
+
+        Ok(sigs)
+    }
+
+    async fn fetch_or_create_account(&self, account_id: &str) -> Result<Arc<Account>> {
+        let account = self.cache.lock().get(account_id).cloned();
+        match account {
+            Some(account) => Ok(account),
+            None => {
+                let encrypted = sqlx::query_as!(
+                    EncryptedAccount,
+                    "SELECT encrypted_privkey, salt FROM Accounts WHERE id=?",
+                    account_id
+                )
+                .fetch_optional(&self.pool)
+                .await
+                .context("cannot fetch account from database")?;
+
+                if let Some(encrypted) = encrypted {
+                    block_in_place(|| {
+                        let account = {
+                            let account = Account::from_encrypted(
+                                &encrypted,
+                                self.master_password.expose_secret().as_bytes(),
+                            );
+                            Arc::new(account)
+                        };
+                        self.cache
+                            .lock()
+                            .put(account_id.into(), Arc::clone(&account));
+                        Ok(account)
+                    })
+                } else {
+                    self.generate_account(account_id).await
+                        .context("No account for the requested `account_id`, and fail to create a new account for it")
+                }
             }
         }
     }

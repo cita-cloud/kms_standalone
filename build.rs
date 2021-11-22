@@ -8,9 +8,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(true)
         .build_server(true)
         .format(true)
-        .compile(
-            &["blockchain.proto", "common.proto", "kms.proto"],
-            &["proto"],
-        )?;
+        .compile(&["kms.proto"], &["proto"])?;
     Ok(())
 }

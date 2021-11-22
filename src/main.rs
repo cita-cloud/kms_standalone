@@ -11,6 +11,7 @@ use clap::App;
 use clap::Arg;
 
 use anyhow::anyhow;
+use anyhow::bail;
 use anyhow::Context;
 use anyhow::Result;
 
@@ -23,14 +24,12 @@ use url::Url;
 use account::AccountManager;
 use config::load_config;
 use config::KmsConfig;
-use proto::KmsServiceServer;
-use server::CitaCloudKmsService;
+use proto::KmsServer;
+use server::KmsService;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // TODO: refactor those cli interface
-
-    // args
+    // common args
     let config_arg = Arg::new("config")
         .about("the kms config")
         .takes_value(true)
@@ -65,21 +64,11 @@ async fn main() -> Result<()> {
         .arg(log_dir_arg)
         .arg(log_file_name_arg);
 
-    let create_cmd = App::new("create")
-        .alias("c")
-        .about("create an account")
-        .arg(config_arg.long("config"))
-        .arg(
-            Arg::new("description")
-                .about("description of your account, optional")
-                .takes_value(true),
-        );
-
     let app = App::new("kms")
         .about("KMS service for CITA-Cloud and can be used as a standalone service")
-        .subcommands([run_cmd, create_cmd]);
+        .subcommands([run_cmd]);
 
-    let matches = app.get_matches();
+    let matches = app.clone().get_matches();
     match matches.subcommand() {
         Some(("run", m)) => {
             let config = {
@@ -110,7 +99,7 @@ async fn main() -> Result<()> {
                 let acc_mgr = account_manager(&config)
                     .await
                     .context("cannot build kms service")?;
-                CitaCloudKmsService::new(acc_mgr)
+                KmsService::new(acc_mgr)
             };
 
             let grpc_addr = format!("0.0.0.0:{}", config.grpc_listen_port)
@@ -122,28 +111,14 @@ async fn main() -> Result<()> {
                 config.grpc_listen_port
             );
             tonic::transport::Server::builder()
-                .add_service(KmsServiceServer::new(kms_svc))
+                .add_service(KmsServer::new(kms_svc))
                 .serve(grpc_addr)
                 .await
                 .context("cannot start grpc server")?;
         }
-        Some(("create", m)) => {
-            let config = {
-                let path = m.value_of("config").unwrap();
-                load_config(path).context("cannot load config")?
-            };
-            let description = m.value_of("description").unwrap_or_default();
-
-            let acc_mgr = account_manager(&config).await?;
-            let (account_id, addr) = acc_mgr
-                .generate_account(description)
-                .await
-                .context("cannot generate account")?;
-            println!("account_id: {}", account_id);
-            println!("address: 0x{}", hex::encode(&addr));
-        }
         _ => {
-            println!("no subcommand provided");
+            app.print_help();
+            bail!("no subcommand provided");
         }
     }
 

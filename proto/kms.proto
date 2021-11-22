@@ -1,73 +1,16 @@
 syntax = "proto3";
 
-import "common.proto";
-
 package kms;
 
-message GetCryptoInfoResponse {
-    string name = 1;
-    uint32 hash_len = 2;
-    uint32 signature_len = 3;
-    uint32 address_len = 4;
+message SignRequest {
+    string account_id = 1;
+    repeated bytes msgs = 2;
 }
 
-message GenerateKeyPairRequest {
-    string Description = 2;
+message SignResponse {
+    repeated bytes signatures = 1;
 }
 
-message GenerateKeyPairResponse {
-    uint64 key_id = 1;
-    bytes address = 2;
-}
-
-message HashDataRequest {
-    bytes data = 2;
-}
-
-message HashDataResponse {
-    bytes hash = 1;
-}
-
-
-message VerifyDataHashRequest {
-    bytes data = 1;
-    bytes hash = 2;
-}
-
-message SignMessageRequest {
-    uint64 key_id = 1;
-    bytes msg = 2;
-}
-
-message SignMessageResponse {
-    bytes signature = 1;
-}
-
-message RecoverSignatureRequest {
-    bytes msg = 1;
-    bytes signature = 2;
-}
-
-message RecoverSignatureResponse {
-    bytes address = 1;
-}
-
-service KmsService {
-    // Get crypto info
-    rpc GetCryptoInfo(common.Empty) returns (GetCryptoInfoResponse);
-
-    // Generate a KeyPair
-    rpc GenerateKeyPair(GenerateKeyPairRequest) returns (GenerateKeyPairResponse);
-
-    // Hash data
-    rpc HashData(HashDataRequest) returns (HashDataResponse);
-
-    // Verify hash of data
-    rpc VerifyDataHash(VerifyDataHashRequest) returns (common.SimpleResponse);
-
-    // Sign a message
-    rpc SignMessage(SignMessageRequest) returns (SignMessageResponse);
-
-    // Recover signature
-    rpc RecoverSignature(RecoverSignatureRequest) returns (RecoverSignatureResponse);
+service Kms {
+    rpc Sign(SignRequest) returns (SignResponse);
 }
