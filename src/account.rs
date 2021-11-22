@@ -24,7 +24,7 @@ use crate::sm::{
     Signature,
 };
 
-const SALT_BYTES_LEN: usize = 16;
+const SALT_BYTES_LEN: usize = 32;
 type Salt = [u8; SALT_BYTES_LEN];
 
 #[derive(thiserror::Error, Debug)]
@@ -150,8 +150,8 @@ impl AccountManager {
     }
 
     pub async fn generate_account(&self, account_id: &str) -> Result<Arc<Account>> {
-        let (account, encrypted_privkey, address, salt) = block_in_place(|| {
-            let (account, address, sk) = Account::generate();
+        let (account, encrypted_privkey, salt) = block_in_place(|| {
+            let (account, _address, sk) = Account::generate();
 
             let salt: Salt = rand::thread_rng().gen();
             let encrypted_privkey = {
@@ -167,7 +167,7 @@ impl AccountManager {
                 };
                 sm4_encrypt(sk.expose_secret(), password_hash.expose_secret())
             };
-            (Arc::new(account), encrypted_privkey, address, salt)
+            (Arc::new(account), encrypted_privkey, salt)
         });
 
         sqlx::query!(

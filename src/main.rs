@@ -64,7 +64,7 @@ async fn main() -> Result<()> {
         .arg(log_dir_arg)
         .arg(log_file_name_arg);
 
-    let app = App::new("kms")
+    let mut app = App::new("kms")
         .about("KMS service for CITA-Cloud and can be used as a standalone service")
         .subcommands([run_cmd]);
 
