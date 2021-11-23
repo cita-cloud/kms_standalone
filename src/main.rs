@@ -1,8 +1,11 @@
 mod account;
 mod config;
-mod proto;
 mod server;
 mod sm;
+
+mod proto {
+    tonic::include_proto!("kms");
+}
 
 use std::fs;
 use std::path::PathBuf;
@@ -21,11 +24,12 @@ use tracing::Level;
 use secrecy::SecretString;
 use url::Url;
 
-use account::AccountManager;
-use config::load_config;
-use config::KmsConfig;
-use proto::KmsServer;
-use server::KmsService;
+use self::{
+    account::AccountManager,
+    config::{load_config, KmsConfig},
+    proto::kms_server::KmsServer,
+    server::KmsService,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {

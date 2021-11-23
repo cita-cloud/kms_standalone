@@ -2,7 +2,7 @@ use anyhow::Result;
 use tonic::{Request, Response, Status};
 
 use crate::account::AccountManager;
-use crate::proto::{Kms, SignRequest, SignResponse};
+use crate::proto::{kms_server::Kms, SignRequest, SignResponse};
 
 pub struct KmsService(AccountManager);
 

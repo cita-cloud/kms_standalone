@@ -26,9 +26,14 @@ jemallocator-global = "0.3.2"
 hex = "0.4.3"
 parking_lot = "0.11.2"
 rayon = "1.5.1"
+indicatif = "0.16.2"
 
 [build-dependencies]
 tonic-build = "0.6"
 
 [profile.release]
 lto = true
+
+[[bin]]
+name = "kms-bench"
+path = "src/bin/kms-bench.rs"
