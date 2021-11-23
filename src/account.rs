@@ -120,16 +120,15 @@ impl AccountManager {
         }) = hash_and_salt
         {
             let salted_pw =
-                Secret::new([master_password.expose_secret().as_bytes(), salt.as_slice()].concat());
+                Secret::new([master_password.expose_secret().as_bytes(), &salt[..]].concat());
             if password_hash != sm3_hash(salted_pw.expose_secret()) {
                 bail!(Error::MasterPasswordMismatched);
             }
         } else {
             let salt: Salt = rand::thread_rng().gen();
             let salted_pw_hash = {
-                let salted_pw = Secret::new(
-                    [master_password.expose_secret().as_bytes(), salt.as_slice()].concat(),
-                );
+                let salted_pw =
+                    Secret::new([master_password.expose_secret().as_bytes(), &salt[..]].concat());
                 sm3_hash(salted_pw.expose_secret())
             };
             sqlx::query!(
@@ -156,11 +155,7 @@ impl AccountManager {
             let encrypted_privkey = {
                 let password_hash = {
                     let salted_pw = Secret::new(
-                        [
-                            self.master_password.expose_secret().as_bytes(),
-                            salt.as_slice(),
-                        ]
-                        .concat(),
+                        [self.master_password.expose_secret().as_bytes(), &salt[..]].concat(),
                     );
                     Secret::new(sm3_hash(salted_pw.expose_secret()))
                 };
