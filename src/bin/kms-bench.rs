@@ -88,7 +88,6 @@ async fn main() {
         .unwrap_or(total);
     let use_batch = m.is_present("batch");
 
-    println!("Sending transactions...");
     let progbar = {
         let progbar = indicatif::ProgressBar::new(total);
         progbar.set_style(
@@ -182,6 +181,9 @@ async fn bench_with_batch(
         .collect::<Vec<(KmsClient<Channel>, SignRequest)>>();
 
     println!("Sending transactions...");
+    // Show progress bar.
+    progbar.inc(0);
+
     let t = std::time::Instant::now();
     let hs = conn_workloads
         .into_iter()
@@ -285,6 +287,9 @@ async fn bench_without_batch(
         .collect::<Vec<(KmsClient<Channel>, Vec<Vec<SignRequest>>)>>();
 
     println!("Sending transactions...");
+    // Show progress bar.
+    progbar.inc(0);
+
     let t = std::time::Instant::now();
     let hs = conn_workloads
         .into_iter()
