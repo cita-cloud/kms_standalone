@@ -1,3 +1,5 @@
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -5,14 +7,14 @@ use secrecy::ExposeSecret;
 use secrecy::Secret;
 use secrecy::SecretString;
 
-use anyhow::bail;
+use anyhow::ensure;
 use anyhow::Context;
 use anyhow::Result;
 
-use lru::LruCache;
 use parking_lot::Mutex;
 use sqlx::MySqlPool;
 
+use tokio::sync::watch;
 use tokio::task::block_in_place;
 
 use efficient_sm2::KeyPair;
@@ -20,19 +22,12 @@ use efficient_sm2::KeyPair;
 use rand::Rng;
 
 use crate::sm::{
-    pk2address, sm2_gen_keypair, sm2_sign, sm3_hash, sm4_decrypt, sm4_encrypt, Address, PrivateKey,
-    Signature,
+    addr_from_keypair, sm2_gen_keypair, sm2_sign, sm3_hash, sm4_decrypt, sm4_encrypt, Address,
+    PrivateKey, Signature,
 };
 
 const SALT_BYTES_LEN: usize = 32;
 type Salt = [u8; SALT_BYTES_LEN];
-
-#[non_exhaustive]
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("Master password mismatched")]
-    MasterPasswordMismatched,
-}
 
 #[derive(Debug)]
 struct EncryptedAccount {
@@ -48,13 +43,13 @@ struct HashAndSalt {
 
 // TODO and WARNING
 // KeyPairs are not zeroized after drop. Doing so requires patching efficient_sm2
-struct Account(KeyPair);
+#[derive(Clone)]
+struct Account(Arc<KeyPair>);
 
 impl Account {
-    pub fn generate() -> (Account, Address, Secret<PrivateKey>) {
-        let (keypair, pk, sk) = sm2_gen_keypair();
-        let addr = pk2address(&pk);
-        (Account(keypair), addr, sk)
+    pub fn generate() -> (Account, Secret<PrivateKey>) {
+        let (keypair, sk) = sm2_gen_keypair();
+        (Account(Arc::new(keypair)), sk)
     }
 
     pub fn sign(&self, msg: &[u8]) -> Signature {
@@ -74,22 +69,30 @@ impl Account {
         let keypair =
             KeyPair::new(sk.expose_secret()).expect("construct keypair from private key failed");
 
-        Account(keypair)
+        Account(Arc::new(keypair))
     }
+
+    pub fn get_address(&self) -> Address {
+        addr_from_keypair(&self.0)
+    }
+}
+
+enum AccountSlot {
+    Cached(Account),
+    Waiting(watch::Receiver<Option<Account>>),
 }
 
 pub struct AccountManager {
     master_password: SecretString,
 
     pool: MySqlPool,
-    cache: Mutex<LruCache<String, Arc<Account>>>,
+    cache: Mutex<HashMap<String, AccountSlot>>,
 }
 
 impl AccountManager {
     pub async fn new(
         db_url: &str,
         master_password: SecretString,
-        max_cached_accounts: usize,
         db_max_connections: u32,
         db_conn_timeout_millis: u64,
         db_conn_idle_timeout_millis: u64,
@@ -121,9 +124,10 @@ impl AccountManager {
         {
             let salted_pw =
                 Secret::new([master_password.expose_secret().as_bytes(), &salt[..]].concat());
-            if password_hash != sm3_hash(salted_pw.expose_secret()) {
-                bail!(Error::MasterPasswordMismatched);
-            }
+            ensure!(
+                password_hash != sm3_hash(salted_pw.expose_secret()),
+                "Master password mismatched"
+            );
         } else {
             let salt: Salt = rand::thread_rng().gen();
             let salted_pw_hash = {
@@ -143,13 +147,13 @@ impl AccountManager {
         Ok(Self {
             master_password,
             pool,
-            cache: Mutex::new(LruCache::new(max_cached_accounts)),
+            cache: Mutex::new(HashMap::new()),
         })
     }
 
-    async fn generate_account(&self, account_id: &str) -> Result<Arc<Account>> {
+    async fn generate_account(&self, account_id: &str) -> Result<Account> {
         let (account, encrypted_privkey, salt) = block_in_place(|| {
-            let (account, _address, sk) = Account::generate();
+            let (account, sk) = Account::generate();
 
             let salt: Salt = rand::thread_rng().gen();
             let encrypted_privkey = {
@@ -161,7 +165,7 @@ impl AccountManager {
                 };
                 sm4_encrypt(sk.expose_secret(), password_hash.expose_secret())
             };
-            (Arc::new(account), encrypted_privkey, salt)
+            (account, encrypted_privkey, salt)
         });
 
         sqlx::query!(
@@ -176,7 +180,7 @@ impl AccountManager {
 
         self.cache
             .lock()
-            .put(account_id.into(), Arc::clone(&account));
+            .insert(account_id.into(), AccountSlot::Cached(account.clone()));
 
         Ok(account)
     }
@@ -197,39 +201,83 @@ impl AccountManager {
         Ok(sigs)
     }
 
-    async fn fetch_or_create_account(&self, account_id: &str) -> Result<Arc<Account>> {
-        let account = self.cache.lock().get(account_id).cloned();
-        match account {
-            Some(account) => Ok(account),
-            None => {
-                let encrypted = sqlx::query_as!(
-                    EncryptedAccount,
-                    "SELECT encrypted_privkey, salt FROM Accounts WHERE id=?",
-                    account_id
-                )
-                .fetch_optional(&self.pool)
-                .await
-                .context("cannot fetch account from database")?;
+    pub async fn get_account_address(&self, account_id: &str) -> Result<Address> {
+        let account = self
+            .fetch_or_create_account(account_id)
+            .await
+            .with_context(|| format!("cannot fetch or create account `{}`", account_id))?;
 
-                if let Some(encrypted) = encrypted {
-                    block_in_place(|| {
-                        let account = {
-                            let account = Account::from_encrypted(
-                                &encrypted,
-                                self.master_password.expose_secret().as_bytes(),
-                            );
-                            Arc::new(account)
-                        };
-                        self.cache
-                            .lock()
-                            .put(account_id.into(), Arc::clone(&account));
-                        Ok(account)
-                    })
-                } else {
-                    self.generate_account(account_id).await
-                        .context("No account for the requested `account_id`, and fail to create a new account for it")
+        Ok(account.get_address())
+    }
+
+    async fn fetch_or_create_account(&self, account_id: &str) -> Result<Account> {
+        // Work around `!Send` across await
+        enum Either {
+            Waiter(watch::Receiver<Option<Account>>),
+            Worker(watch::Sender<Option<Account>>),
+        }
+        let either = {
+            let mut guard = self.cache.lock();
+            match guard.entry(account_id.into()) {
+                Entry::Occupied(e) => match e.get() {
+                    AccountSlot::Cached(account) => return Ok(account.clone()),
+                    AccountSlot::Waiting(waiter) => {
+                        let waiter = waiter.clone();
+                        Either::Waiter(waiter)
+                    }
+                },
+                Entry::Vacant(e) => {
+                    let (tx, rx) = watch::channel(None);
+                    e.insert(AccountSlot::Waiting(rx));
+                    Either::Worker(tx)
                 }
             }
-        }
+        };
+
+        let tx = match either {
+            Either::Waiter(mut rx) => {
+                ensure!(
+                    rx.changed().await.is_ok(),
+                    "waiting another worker for acquiring account, but that worker seems to fail"
+                );
+                return Ok(rx
+                    .borrow()
+                    .clone()
+                    .expect("worker never releases a None value"));
+            }
+            Either::Worker(tx) => tx,
+        };
+
+        let encrypted = sqlx::query_as!(
+            EncryptedAccount,
+            "SELECT encrypted_privkey, salt FROM Accounts WHERE id=?",
+            account_id
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .context("cannot fetch account from database")?;
+
+        let account = if let Some(encrypted) = encrypted {
+            block_in_place(|| {
+                let account = Account::from_encrypted(
+                    &encrypted,
+                    self.master_password.expose_secret().as_bytes(),
+                );
+                self.cache
+                    .lock()
+                    .insert(account_id.into(), AccountSlot::Cached(account.clone()));
+
+                account
+            })
+        } else {
+            // cache is updated inside.
+            self.generate_account(account_id).await.context(
+                "No account for the requested account_id, and fail to create a new account for it",
+            )?
+        };
+
+        let _ = tx.send(Some(account.clone()));
+
+        Ok(account)
     }
 }

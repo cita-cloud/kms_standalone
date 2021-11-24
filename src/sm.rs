@@ -23,14 +23,10 @@ pub type PrivateKey = [u8; SM2_PRIVKEY_BYTES_LEN];
 pub type Signature = [u8; SM2_SIGNATURE_BYTES_LEN];
 
 // return KeyPair is for cache.
-pub fn sm2_gen_keypair() -> (KeyPair, PublicKey, Secret<PrivateKey>) {
+pub fn sm2_gen_keypair() -> (KeyPair, Secret<PrivateKey>) {
     let sk: Secret<PrivateKey> = Secret::new(rand::thread_rng().gen());
     let keypair = efficient_sm2::KeyPair::new(&sk.expose_secret()[..]).unwrap();
-    let pk = keypair.public_key().bytes_less_safe()[1..]
-        .try_into()
-        .unwrap();
-
-    (keypair, pk, sk)
+    (keypair, sk)
 }
 
 pub fn sm2_sign(key_pair: &KeyPair, msg: &[u8]) -> Signature {
@@ -76,8 +72,11 @@ pub fn sm3_hash(input: &[u8]) -> Hash {
     libsm::sm3::hash::Sm3Hash::new(input).get_hash()
 }
 
-pub fn pk2address(pk: &PublicKey) -> Address {
-    sm3_hash(pk)[SM3_HASH_BYTES_LEN - ADDR_BYTES_LEN..]
+pub fn addr_from_keypair(keypair: &KeyPair) -> Address {
+    let pk = keypair.public_key();
+    let hash = sm3_hash(&pk.bytes_less_safe()[1..]);
+
+    hash[SM3_HASH_BYTES_LEN - ADDR_BYTES_LEN..]
         .try_into()
         .unwrap()
 }

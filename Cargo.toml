@@ -2,13 +2,13 @@
 name = "kms"
 version = "0.1.0"
 edition = "2021"
+default-run = "kms"
 
 [dependencies]
 sqlx = { version = "0.5.9", features = [ "runtime-tokio-rustls", "mysql", "offline" ] }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"] }
 tonic = "0.6"
 prost = "0.9"
-lru = "0.7"
 secrecy = "0.8"
 rand = "0.8"
 libsm = "0.4.1"

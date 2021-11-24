@@ -163,7 +163,7 @@ async fn bench_with_batch(
             } else {
                 total / connections
             };
-            let msgs = (0..reqs_for_this_conn)
+            let messages = (0..reqs_for_this_conn)
                 .into_par_iter()
                 .map(|_| {
                     let mut rng = thread_rng();
@@ -173,7 +173,7 @@ async fn bench_with_batch(
 
             let req = SignRequest {
                 account_id: format!("bench#{}", i),
-                msgs,
+                messages,
             };
 
             (conn, req)
@@ -275,7 +275,7 @@ async fn bench_without_batch(
 
                             SignRequest {
                                 account_id,
-                                msgs: vec![msg],
+                                messages: vec![msg],
                             }
                         })
                         .collect()

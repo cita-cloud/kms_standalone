@@ -19,11 +19,7 @@ mod default {
     }
 
     pub fn db_max_connections() -> u32 {
-        1024
-    }
-
-    pub fn max_cached_accounts() -> usize {
-        1024
+        32
     }
 }
 
@@ -43,9 +39,6 @@ pub struct KmsConfig {
     pub db_conn_idle_timeout_millis: u64,
     #[serde(default = "default::db_max_connections")]
     pub db_max_connections: u32,
-
-    #[serde(default = "default::max_cached_accounts")]
-    pub max_cached_accounts: usize,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

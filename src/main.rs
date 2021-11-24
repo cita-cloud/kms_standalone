@@ -156,7 +156,6 @@ async fn account_manager(config: &KmsConfig) -> Result<AccountManager> {
     AccountManager::new(
         &db_url,
         master_password,
-        config.max_cached_accounts,
         config.db_max_connections,
         config.db_conn_timeout_millis,
         config.db_conn_idle_timeout_millis,

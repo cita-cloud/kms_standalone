@@ -4,13 +4,22 @@ package kms;
 
 message SignRequest {
     string account_id = 1;
-    repeated bytes msgs = 2;
+    repeated bytes messages = 2;
 }
 
 message SignResponse {
     repeated bytes signatures = 1;
 }
 
+message GetAccountAddressRequest {
+    string account_id = 1;
+}
+
+message GetAccountAddressResponse {
+    string address = 1;
+}
+
 service Kms {
     rpc Sign(SignRequest) returns (SignResponse);
+    rpc GetAccountAddress(GetAccountAddressRequest) returns (GetAccountAddressResponse);
 }
