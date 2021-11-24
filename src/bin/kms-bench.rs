@@ -121,7 +121,11 @@ async fn main() {
     );
     let success = progbar.position();
     let failure = total - success;
-    println!("`{}` success, `{}` failure", success, failure);
+    let rps = total / duration.as_secs();
+    println!(
+        "`{}` success, `{}` failure, `{}` req/s",
+        success, failure, rps
+    );
 }
 
 async fn bench_with_batch(
