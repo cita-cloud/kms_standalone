@@ -19,7 +19,16 @@ message GetAccountAddressResponse {
     string address = 1;
 }
 
+message InsertAccountRequest {
+    string id = 1;
+    bytes encrypted_privkey = 2;
+    bytes salt = 3;
+}
+
+message InsertAccountResponse { }
+
 service Kms {
     rpc Sign(SignRequest) returns (SignResponse);
     rpc GetAccountAddress(GetAccountAddressRequest) returns (GetAccountAddressResponse);
+    rpc InsertAccount(InsertAccountRequest) returns (InsertAccountResponse);
 }
