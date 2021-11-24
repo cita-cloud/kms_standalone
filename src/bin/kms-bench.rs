@@ -121,9 +121,9 @@ async fn main() {
     );
     let success = progbar.position();
     let failure = total - success;
-    let rps = total / duration.as_secs();
+    let rps = total as f64 / (duration.as_millis() as f64 / 1000.0);
     println!(
-        "`{}` success, `{}` failure, `{}` req/s",
+        "`{}` success, `{}` failure, `{:.1}` req/s",
         success, failure, rps
     );
 }
