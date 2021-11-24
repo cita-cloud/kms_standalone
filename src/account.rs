@@ -125,7 +125,7 @@ impl AccountManager {
             let salted_pw =
                 Secret::new([master_password.expose_secret().as_bytes(), &salt[..]].concat());
             ensure!(
-                password_hash != sm3_hash(salted_pw.expose_secret()),
+                password_hash == sm3_hash(salted_pw.expose_secret()),
                 "Master password mismatched"
             );
         } else {
