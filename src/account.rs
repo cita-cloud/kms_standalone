@@ -56,21 +56,35 @@ impl Account {
         sm2_sign(&self.0, msg)
     }
 
-    pub fn from_encrypted(encrypted: &EncryptedAccount, master_password: &[u8]) -> Self {
+    pub fn from_encrypted(encrypted: &EncryptedAccount, master_password: &[u8]) -> Result<Self> {
         let sk = {
             // let buf = Secret::new([master_password, &encrypted.salt].concat());
             // let password_hash = Secret::new(sm3_hash(buf.expose_secret()));
             let password = Secret::new([master_password, &encrypted.salt].concat());
-            let sk: PrivateKey =
-                sm4_decrypt(&encrypted.encrypted_privkey, password.expose_secret())
-                    .try_into()
-                    .unwrap();
-            Secret::new(sk)
+            let sk = {
+                let hex_sk = Secret::new(sm4_decrypt(
+                    &encrypted.encrypted_privkey,
+                    password.expose_secret(),
+                ));
+                let hex_sk = match hex_sk.expose_secret().as_slice() {
+                    hex_sk @ [b'0', b'x', ..] => &hex_sk[2..],
+                    hex_sk => hex_sk,
+                };
+                Secret::new(
+                    hex::decode(hex_sk).context("invalid private key, must be a hex string")?,
+                )
+            };
+            ensure!(
+                sk.expose_secret().len() == std::mem::size_of::<PrivateKey>(),
+                "invalid private key, must be 32 bytes array after hex::decode"
+            );
+
+            sk
         };
         let keypair =
             KeyPair::new(sk.expose_secret()).expect("construct keypair from private key failed");
 
-        Account(Arc::new(keypair))
+        Ok(Account(Arc::new(keypair)))
     }
 
     pub fn get_address(&self) -> Address {
@@ -185,6 +199,7 @@ impl AccountManager {
             };
 
             Account::from_encrypted(&encrypted, self.master_password.expose_secret())
+                .with_context(|| format!("cannot insert account `{}`", account_id))?
         };
 
         sqlx::query!(
@@ -277,7 +292,9 @@ impl AccountManager {
         .context("cannot fetch account from database")?;
 
         let account = block_in_place(|| {
-            let account = Account::from_encrypted(&encrypted, self.master_password.expose_secret());
+            let account = Account::from_encrypted(&encrypted, self.master_password.expose_secret())
+                .with_context(|| format!("cannot fetch account `{}`", account_id))
+                .expect("corrupted account data");
             self.cache
                 .lock()
                 .insert(account_id.into(), AccountSlot::Cached(account.clone()));
