@@ -1,8 +1,8 @@
-FROM rust:slim-buster AS buildstage
-WORKDIR /build
-COPY . /build/
+FROM rust:1.56.1 AS builder
 RUN rustup component add rustfmt
+WORKDIR /build
+COPY . /build
 RUN cargo build --release --bin kms
-FROM debian:buster-slim
-COPY --from=buildstage /build/target/release/kms /usr/bin/
+FROM debian:buster
+COPY --from=builder /build/target/release/kms /usr/bin/
 CMD ["kms"]
