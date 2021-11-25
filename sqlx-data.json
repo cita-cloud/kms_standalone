@@ -35,7 +35,7 @@
               "bits": 4225
             },
             "char_set": 63,
-            "max_size": 6
+            "max_size": 3
           }
         }
       ],
@@ -73,7 +73,7 @@
               "bits": 4225
             },
             "char_set": 63,
-            "max_size": 6
+            "max_size": 3
           }
         }
       ],
