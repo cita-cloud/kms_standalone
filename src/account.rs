@@ -26,7 +26,7 @@ use crate::sm::{
     PrivateKey, Signature,
 };
 
-const SALT_BYTES_LEN: usize = 32;
+const SALT_BYTES_LEN: usize = 6;
 type Salt = [u8; SALT_BYTES_LEN];
 
 #[derive(Debug)]
