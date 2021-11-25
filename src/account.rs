@@ -26,7 +26,7 @@ use crate::sm::{
     PrivateKey, Signature,
 };
 
-const SALT_BYTES_LEN: usize = 6;
+const SALT_BYTES_LEN: usize = 3;
 type Salt = [u8; SALT_BYTES_LEN];
 
 #[derive(Debug)]
@@ -176,7 +176,7 @@ impl AccountManager {
         encrypted_privkey: &[u8],
         salt: &[u8],
     ) -> Result<()> {
-        ensure!(salt.len() == 6, "salt must be 6 bytes");
+        ensure!(salt.len() == 3, "salt must be 3 bytes");
 
         let account = {
             let encrypted = EncryptedAccount {
