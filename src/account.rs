@@ -137,8 +137,8 @@ impl AccountManager {
             };
             sqlx::query!(
                 "INSERT INTO MasterPassword (password_hash, salt) VALUES (?, ?)",
-                salted_pw_hash.to_vec(),
-                salt.to_vec()
+                &salted_pw_hash[..],
+                &salt[..]
             )
             .execute(&pool)
             .await
@@ -171,8 +171,8 @@ impl AccountManager {
         sqlx::query!(
             "INSERT INTO Accounts (id, encrypted_privkey, salt) VALUES (?, ?, ?)",
             account_id,
-            encrypted_privkey.to_vec(),
-            salt.to_vec(),
+            &encrypted_privkey[..],
+            &salt[..],
         )
         .execute(&self.pool)
         .await

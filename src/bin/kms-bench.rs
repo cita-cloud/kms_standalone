@@ -197,6 +197,8 @@ async fn bench_with_batch(
                 if let Ok(res) = conn.sign(req).await {
                     let sigs = res.into_inner().signatures;
                     progbar.inc(sigs.len() as u64);
+                } else {
+                    progbar.inc(0);
                 }
             })
         })
@@ -307,14 +309,12 @@ async fn bench_without_batch(
                         let mut conn = conn.clone();
                         tokio::spawn(async move {
                             for req in workload {
-                                if conn
+                                let success = conn
                                     .sign(req)
                                     .await
                                     .map(|resp| !resp.into_inner().signatures.is_empty())
-                                    .unwrap_or(false)
-                                {
-                                    progbar.inc(1);
-                                }
+                                    .unwrap_or(false);
+                                progbar.inc(success as u64);
                             }
                         })
                     })
