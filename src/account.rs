@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use secrecy::ExposeSecret;
 use secrecy::Secret;
-use secrecy::SecretString;
+use secrecy::SecretVec;
 
 use anyhow::ensure;
 use anyhow::Context;
@@ -58,10 +58,11 @@ impl Account {
 
     pub fn from_encrypted(encrypted: &EncryptedAccount, master_password: &[u8]) -> Self {
         let sk = {
-            let buf = Secret::new([master_password, &encrypted.salt].concat());
-            let password_hash = Secret::new(sm3_hash(buf.expose_secret()));
+            // let buf = Secret::new([master_password, &encrypted.salt].concat());
+            // let password_hash = Secret::new(sm3_hash(buf.expose_secret()));
+            let password = Secret::new([master_password, &encrypted.salt].concat());
             let sk: PrivateKey =
-                sm4_decrypt(&encrypted.encrypted_privkey, password_hash.expose_secret())
+                sm4_decrypt(&encrypted.encrypted_privkey, password.expose_secret())
                     .try_into()
                     .unwrap();
             Secret::new(sk)
@@ -83,7 +84,7 @@ enum AccountSlot {
 }
 
 pub struct AccountManager {
-    master_password: SecretString,
+    master_password: SecretVec<u8>,
 
     pool: MySqlPool,
     cache: Mutex<HashMap<String, AccountSlot>>,
@@ -92,7 +93,7 @@ pub struct AccountManager {
 impl AccountManager {
     pub async fn new(
         db_url: &str,
-        master_password: SecretString,
+        master_password: SecretVec<u8>,
         db_max_connections: u32,
         db_conn_timeout_millis: u64,
         db_conn_idle_timeout_millis: u64,
@@ -122,8 +123,7 @@ impl AccountManager {
             salt,
         }) = hash_and_salt
         {
-            let salted_pw =
-                Secret::new([master_password.expose_secret().as_bytes(), &salt[..]].concat());
+            let salted_pw = Secret::new([master_password.expose_secret(), &salt[..]].concat());
             ensure!(
                 password_hash == sm3_hash(salted_pw.expose_secret()),
                 "Master password mismatched"
@@ -131,14 +131,13 @@ impl AccountManager {
         } else {
             let salt: Salt = rand::thread_rng().gen();
             let salted_pw_hash = {
-                let salted_pw =
-                    Secret::new([master_password.expose_secret().as_bytes(), &salt[..]].concat());
+                let salted_pw = Secret::new([master_password.expose_secret(), &salt[..]].concat());
                 sm3_hash(salted_pw.expose_secret())
             };
             sqlx::query!(
                 "INSERT INTO MasterPassword (password_hash, salt) VALUES (?, ?)",
-                salted_pw_hash.to_vec(),
-                salt.to_vec()
+                &salted_pw_hash[..],
+                &salt[..]
             )
             .execute(&pool)
             .await
@@ -151,28 +150,48 @@ impl AccountManager {
         })
     }
 
+    #[allow(unused)]
     async fn generate_account(&self, account_id: &str) -> Result<Account> {
         let (account, encrypted_privkey, salt) = block_in_place(|| {
             let (account, sk) = Account::generate();
 
             let salt: Salt = rand::thread_rng().gen();
             let encrypted_privkey = {
-                let password_hash = {
-                    let salted_pw = Secret::new(
-                        [self.master_password.expose_secret().as_bytes(), &salt[..]].concat(),
-                    );
-                    Secret::new(sm3_hash(salted_pw.expose_secret()))
-                };
-                sm4_encrypt(sk.expose_secret(), password_hash.expose_secret())
+                let password =
+                    Secret::new([self.master_password.expose_secret(), &salt[..]].concat());
+                sm4_encrypt(sk.expose_secret(), password.expose_secret())
             };
             (account, encrypted_privkey, salt)
         });
 
+        self.insert_account(account_id, &encrypted_privkey, &salt)
+            .await?;
+
+        Ok(account)
+    }
+
+    pub async fn insert_account(
+        &self,
+        account_id: &str,
+        encrypted_privkey: &[u8],
+        salt: &[u8],
+    ) -> Result<()> {
+        ensure!(salt.len() == 6, "salt must be 6 bytes");
+
+        let account = {
+            let encrypted = EncryptedAccount {
+                encrypted_privkey: encrypted_privkey.to_vec(),
+                salt: salt.to_vec(),
+            };
+
+            Account::from_encrypted(&encrypted, self.master_password.expose_secret())
+        };
+
         sqlx::query!(
             "INSERT INTO Accounts (id, encrypted_privkey, salt) VALUES (?, ?, ?)",
             account_id,
-            encrypted_privkey.to_vec(),
-            salt.to_vec(),
+            encrypted_privkey,
+            salt,
         )
         .execute(&self.pool)
         .await
@@ -180,14 +199,14 @@ impl AccountManager {
 
         self.cache
             .lock()
-            .insert(account_id.into(), AccountSlot::Cached(account.clone()));
+            .insert(account_id.into(), AccountSlot::Cached(account));
 
-        Ok(account)
+        Ok(())
     }
 
     pub async fn sign_with(&self, account_id: &str, msgs: &[Vec<u8>]) -> Result<Vec<Vec<u8>>> {
         let account = self
-            .fetch_or_create_account(account_id)
+            .fetch_account(account_id)
             .await
             .with_context(|| format!("cannot fetch or create account `{}`", account_id))?;
 
@@ -203,14 +222,14 @@ impl AccountManager {
 
     pub async fn get_account_address(&self, account_id: &str) -> Result<Address> {
         let account = self
-            .fetch_or_create_account(account_id)
+            .fetch_account(account_id)
             .await
             .with_context(|| format!("cannot fetch or create account `{}`", account_id))?;
 
         Ok(account.get_address())
     }
 
-    async fn fetch_or_create_account(&self, account_id: &str) -> Result<Account> {
+    async fn fetch_account(&self, account_id: &str) -> Result<Account> {
         // Work around `!Send` across await
         enum Either {
             Waiter(watch::Receiver<Option<Account>>),
@@ -253,28 +272,18 @@ impl AccountManager {
             "SELECT encrypted_privkey, salt FROM Accounts WHERE id=?",
             account_id
         )
-        .fetch_optional(&self.pool)
+        .fetch_one(&self.pool)
         .await
         .context("cannot fetch account from database")?;
 
-        let account = if let Some(encrypted) = encrypted {
-            block_in_place(|| {
-                let account = Account::from_encrypted(
-                    &encrypted,
-                    self.master_password.expose_secret().as_bytes(),
-                );
-                self.cache
-                    .lock()
-                    .insert(account_id.into(), AccountSlot::Cached(account.clone()));
+        let account = block_in_place(|| {
+            let account = Account::from_encrypted(&encrypted, self.master_password.expose_secret());
+            self.cache
+                .lock()
+                .insert(account_id.into(), AccountSlot::Cached(account.clone()));
 
-                account
-            })
-        } else {
-            // cache is updated inside.
-            self.generate_account(account_id).await.context(
-                "No account for the requested account_id, and fail to create a new account for it",
-            )?
-        };
+            account
+        });
 
         let _ = tx.send(Some(account.clone()));
 

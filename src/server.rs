@@ -3,7 +3,8 @@ use tonic::{Request, Response, Status};
 
 use crate::account::AccountManager;
 use crate::proto::{
-    kms_server::Kms, GetAccountAddressRequest, GetAccountAddressResponse, SignRequest, SignResponse,
+    kms_server::Kms, GetAccountAddressRequest, GetAccountAddressResponse, InsertAccountRequest,
+    InsertAccountResponse, SignRequest, SignResponse,
 };
 
 pub struct KmsService(AccountManager);
@@ -43,6 +44,25 @@ impl Kms for KmsService {
             .map(|addr| {
                 let address = format!("0x{}", hex::encode(&addr));
                 let resp = GetAccountAddressResponse { address };
+                Response::new(resp)
+            })
+            .map_err(|e| Status::internal(format!("{:?}", e)))
+    }
+
+    async fn insert_account(
+        &self,
+        request: Request<InsertAccountRequest>,
+    ) -> Result<Response<InsertAccountResponse>, Status> {
+        let InsertAccountRequest {
+            id,
+            encrypted_privkey,
+            salt,
+        } = request.into_inner();
+        self.0
+            .insert_account(&id, &encrypted_privkey, &salt)
+            .await
+            .map(|_| {
+                let resp = InsertAccountResponse {};
                 Response::new(resp)
             })
             .map_err(|e| Status::internal(format!("{:?}", e)))

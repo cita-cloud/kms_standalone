@@ -54,17 +54,19 @@ pub fn sm2_recover_signature(msg: &[u8], signature: &Signature) -> Option<Public
     Some(pk.try_into().unwrap())
 }
 
-pub fn sm4_encrypt(data: &[u8], password_hash: &[u8]) -> Vec<u8> {
-    let (key, iv) = password_hash.split_at(16);
-    let cipher = libsm::sm4::Cipher::new(key, libsm::sm4::Mode::Cfb);
+pub fn sm4_encrypt(data: &[u8], password: &[u8]) -> Vec<u8> {
+    let key = password;
+    let iv = &[0u8; 16];
 
+    let cipher = libsm::sm4::Cipher::new(key, libsm::sm4::Mode::Cbc);
     cipher.encrypt(data, iv)
 }
 
-pub fn sm4_decrypt(data: &[u8], password_hash: &[u8]) -> Vec<u8> {
-    let (key, iv) = password_hash.split_at(16);
-    let cipher = libsm::sm4::Cipher::new(key, libsm::sm4::Mode::Cfb);
+pub fn sm4_decrypt(data: &[u8], password: &[u8]) -> Vec<u8> {
+    let key = password;
+    let iv = &[0u8; 16];
 
+    let cipher = libsm::sm4::Cipher::new(key, libsm::sm4::Mode::Cbc);
     cipher.decrypt(data, iv)
 }
 

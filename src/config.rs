@@ -5,6 +5,8 @@ use std::path::Path;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+use zeroize::Zeroize;
+
 // Those defaults are random picked.
 // Feel free to change it to some more reasonable values.
 mod default {
@@ -23,14 +25,13 @@ mod default {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Zeroize, Serialize, Deserialize, Debug, Clone)]
+#[zeroize(drop)]
 pub struct KmsConfig {
     pub grpc_listen_port: u16,
 
-    pub db_url_path: String,
-    pub db_user_path: String,
-    pub db_password_path: String,
-    pub master_password_path: String,
+    pub db_url: String,
+    pub master_password: String,
 
     // db connection pool config
     #[serde(default = "default::db_conn_timeout_millis")]

@@ -7,22 +7,20 @@ mod proto {
     tonic::include_proto!("kms");
 }
 
-use std::fs;
 use std::path::PathBuf;
 
 use clap::App;
 use clap::Arg;
 
-use anyhow::anyhow;
 use anyhow::bail;
+use anyhow::ensure;
 use anyhow::Context;
 use anyhow::Result;
 
 use tracing::info;
 use tracing::Level;
 
-use secrecy::SecretString;
-use url::Url;
+use secrecy::SecretVec;
 
 use self::{
     account::AccountManager,
@@ -130,31 +128,17 @@ async fn main() -> Result<()> {
 }
 
 async fn account_manager(config: &KmsConfig) -> Result<AccountManager> {
-    // TODO: Is it necessary to wrap db_password and db_url in secret?
-    // I believe them will have footprint during encoding and eventually be stored somewhere non-secret,
-    // and it's less important than master_password.
-    // TODO: maybe use `sqlx::mysql::MySqlConnectOptions` instead
-    let db_url = {
-        let db_user = fs::read_to_string(&config.db_user_path).context("cannot find db_user")?;
-        let db_password =
-            fs::read_to_string(&config.db_password_path).context("cannot find db_password")?;
-        let mut db_url: Url = fs::read_to_string(&config.db_url_path)
-            .context("cannot find db_url")?
-            .parse()?;
+    let master_password = {
+        let err_msg = "invalid master_password, must be a hex string of 26 chars";
 
-        db_url
-            .set_username(&db_user)
-            .map_err(|_| anyhow!("invalid db_url, can't set username for it"))?;
-        db_url
-            .set_password(Some(&db_password))
-            .map_err(|_| anyhow!("invalid db_url, can't set password for it"))?;
+        let pw = remove_0x(&config.master_password);
+        ensure!(pw.len() == 26, err_msg);
 
-        db_url.to_string()
+        SecretVec::new(hex::decode(pw).context(err_msg)?)
     };
-    let master_password = SecretString::new(fs::read_to_string(&config.master_password_path)?);
 
     AccountManager::new(
-        &db_url,
+        &config.db_url,
         master_password,
         config.db_max_connections,
         config.db_conn_timeout_millis,
@@ -177,4 +161,8 @@ fn set_panic_hook() {
             tracing::error!(message = %panic);
         }
     }));
+}
+
+fn remove_0x(s: &str) -> &str {
+    s.strip_prefix("0x").unwrap_or(s)
 }
