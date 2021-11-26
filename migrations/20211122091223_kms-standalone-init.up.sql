@@ -1,7 +1,8 @@
 CREATE TABLE IF NOT EXISTS Accounts (
     id VARCHAR(255) NOT NULL PRIMARY KEY,
     -- encrypted with salt
-    encrypted_privkey BINARY(32) NOT NULL,
+    -- horrible, it's actually a hex string(32bytes * 2 = 64 char) plus potential `0x` prefix.
+    encrypted_privkey BINARY(66) NOT NULL,
     salt BINARY(3) NOT NULL
 );
 

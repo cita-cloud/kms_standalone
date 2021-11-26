@@ -21,6 +21,7 @@ use efficient_sm2::KeyPair;
 
 use rand::Rng;
 
+#[allow(unused)]
 use crate::sm::{
     addr_from_keypair, sm2_gen_keypair, sm2_sign, sm3_hash, sm4_decrypt, sm4_encrypt, Address,
     PrivateKey, Signature,
@@ -47,19 +48,12 @@ struct HashAndSalt {
 struct Account(Arc<KeyPair>);
 
 impl Account {
-    pub fn generate() -> (Account, Secret<PrivateKey>) {
-        let (keypair, sk) = sm2_gen_keypair();
-        (Account(Arc::new(keypair)), sk)
-    }
-
     pub fn sign(&self, msg: &[u8]) -> Signature {
         sm2_sign(&self.0, msg)
     }
 
     pub fn from_encrypted(encrypted: &EncryptedAccount, master_password: &[u8]) -> Result<Self> {
         let sk = {
-            // let buf = Secret::new([master_password, &encrypted.salt].concat());
-            // let password_hash = Secret::new(sm3_hash(buf.expose_secret()));
             let password = Secret::new([master_password, &encrypted.salt].concat());
             let sk = {
                 let hex_sk = Secret::new(sm4_decrypt(
@@ -162,26 +156,6 @@ impl AccountManager {
             pool,
             cache: Mutex::new(HashMap::new()),
         })
-    }
-
-    #[allow(unused)]
-    async fn generate_account(&self, account_id: &str) -> Result<Account> {
-        let (account, encrypted_privkey, salt) = block_in_place(|| {
-            let (account, sk) = Account::generate();
-
-            let salt: Salt = rand::thread_rng().gen();
-            let encrypted_privkey = {
-                let password =
-                    Secret::new([self.master_password.expose_secret(), &salt[..]].concat());
-                sm4_encrypt(sk.expose_secret(), password.expose_secret())
-            };
-            (account, encrypted_privkey, salt)
-        });
-
-        self.insert_account(account_id, &encrypted_privkey, &salt)
-            .await?;
-
-        Ok(account)
     }
 
     pub async fn insert_account(
