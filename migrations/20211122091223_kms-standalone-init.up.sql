@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS Accounts (
     id VARCHAR(255) NOT NULL PRIMARY KEY,
     -- encrypted with salt
-    encrypted_privkey BINARY(32) NOT NULL,
+    encrypted_privkey BINARY(48) NOT NULL,
     salt BINARY(32) NOT NULL
 );
 
