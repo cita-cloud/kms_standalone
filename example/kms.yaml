@@ -1,31 +1,43 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kms-standalone
+  labels:
+    run: kms-standalone
+spec:
+  ports:
+  - port: 55555
+  selector:
+    app: kms-standalone
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kms-deployment
+  name: kms-standalone
 spec:
   selector:
     matchLabels:
-      app: kms
+      app: kms-standalone
   replicas: 1
   template:
     metadata:
       labels:
-        app: kms
+        app: kms-standalone
     spec:
       containers:
-      - name: kms
+      - name: kms-standalone
         image: whfuyn/kms_standalone:adapt-v0.1.0
         command: ["kms", "run", "config/config.toml"]
         workingDir: /kms_standalone
         ports:
         - containerPort: 55555
         volumeMounts:
-        - name: kms-config
+        - name: kms-standalone-config
           mountPath: /kms_standalone/config
       volumes:
-      - name: kms-config
+      - name: kms-standalone-config
         secret:
-          secretName: kms-config
+          secretName: kms-standalone-config
           items:
           - key: config.toml
             path: config.toml
