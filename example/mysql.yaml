@@ -1,0 +1,40 @@
+# WARNING: This is an example, DO NOT use it in production.
+# 警告：这份配置只是个示例，请按照正规流程部署MySQL
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  labels:
+    run: mysql
+spec:
+  ports:
+  - port: 3306
+  selector:
+    app: mysql
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+spec:
+  selector:
+    matchLabels:
+      app: mysql
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - image: mysql:8
+        name: mysql
+        env:
+          # Use secret in real usage
+        - name: MYSQL_ROOT_PASSWORD
+          value: pwd
+        ports:
+        - containerPort: 3306
+          name: mysql
