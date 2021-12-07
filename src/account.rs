@@ -219,10 +219,26 @@ impl AccountManager {
     }
 
     async fn fetch_account(&self, account_id: &str) -> Result<Account> {
+        // Ensure the waiting account slot is removed from cache on failure.
+        // Don't forget to `std::mem::forget` it on success.
+        struct WorkerGuard<'cache, 'account_id> {
+            cache: &'cache Mutex<HashMap<String, AccountSlot>>,
+            account_id: &'account_id str,
+        }
+
+        impl<'cache, 'account_id> Drop for WorkerGuard<'cache, 'account_id> {
+            fn drop(&mut self) {
+                self.cache.lock().remove(self.account_id);
+            }
+        }
+
         // Work around `!Send` across await
-        enum Either {
+        enum Either<'cache, 'account_id> {
             Waiter(watch::Receiver<Option<Account>>),
-            Worker(watch::Sender<Option<Account>>),
+            Worker(
+                watch::Sender<Option<Account>>,
+                WorkerGuard<'cache, 'account_id>,
+            ),
         }
         let either = {
             let mut guard = self.cache.lock();
@@ -237,12 +253,18 @@ impl AccountManager {
                 Entry::Vacant(e) => {
                     let (tx, rx) = watch::channel(None);
                     e.insert(AccountSlot::Waiting(rx));
-                    Either::Worker(tx)
+                    Either::Worker(
+                        tx,
+                        WorkerGuard {
+                            cache: &self.cache,
+                            account_id,
+                        },
+                    )
                 }
             }
         };
 
-        let tx = match either {
+        let (tx, worker_guard) = match either {
             Either::Waiter(mut rx) => {
                 ensure!(
                     rx.changed().await.is_ok(),
@@ -253,7 +275,7 @@ impl AccountManager {
                     .clone()
                     .expect("worker never releases a None value"));
             }
-            Either::Worker(tx) => tx,
+            Either::Worker(tx, worker_guard) => (tx, worker_guard),
         };
 
         let encrypted = sqlx::query_as!(
@@ -278,6 +300,7 @@ impl AccountManager {
 
         let _ = tx.send(Some(account.clone()));
 
+        std::mem::forget(worker_guard);
         Ok(account)
     }
 }
